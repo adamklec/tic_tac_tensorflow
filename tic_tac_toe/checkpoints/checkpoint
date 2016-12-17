@@ -1,0 +1,2 @@
+model_checkpoint_path: "/Users/adam/Documents/projects/td_learning/tic_tac_toe/checkpoints/checkpoint.ckpt"
+all_model_checkpoint_paths: "/Users/adam/Documents/projects/td_learning/tic_tac_toe/checkpoints/checkpoint.ckpt"
