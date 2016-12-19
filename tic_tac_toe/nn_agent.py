@@ -105,7 +105,7 @@ class NeuralNetAgent(object):
 
         self.summaries_op = tf.summary.merge_all()
 
-        self.saver = tf.train.Saver(max_to_keep=1)
+        self.saver = tf.train.Saver(var_list=tvars, max_to_keep=1)
 
         self.sess.run(tf.global_variables_initializer())
 
