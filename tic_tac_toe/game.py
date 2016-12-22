@@ -4,13 +4,14 @@ from copy import copy
 
 class TicTacToe(object):
     def __init__(self):
-        self.board = np.zeros((3, 3, 2))
+        self.board = np.zeros((3, 3, 3))
+        self.board[:, :, 2] = 1
         self.turn = False
 
     def reset(self):
-        self.board = np.zeros((3, 3, 2))
+        self.board = np.zeros((3, 3, 3))
+        self.board[:, :, 2] = 1
         self.turn = False
-        return self.board, self.reward()
 
     def reward(self, board=None):
         if board is None:
@@ -19,7 +20,7 @@ class TicTacToe(object):
             return 1
         elif any(board[:, :, 1].sum(axis=0) == 3) or any(board[:, :, 1].sum(axis=1) == 3) or board[:, :, 1][np.eye(3) == 1].sum() == 3 or board[:, :, 1][np.rot90(np.eye(3)) == 1].sum() == 3:
             return -1
-        elif board.sum() == 9:
+        elif board[:, :, :2].sum() == 9:
             return 0
         else:
             return None
@@ -34,24 +35,32 @@ class TicTacToe(object):
 
         candidate_boards = []
         if self.reward() is None:
-            empty_xs, empty_ys = np.where(board.sum(axis=2) == 0)
+            empty_xs, empty_ys = np.where(board[:, :, 2] == 1)
             for candidate_action in zip(empty_xs, empty_ys):
                 candidate_board = copy(board)
+                candidate_board[candidate_action[0], candidate_action[1], 2] = 0
                 candidate_board[candidate_action[0], candidate_action[1], int(self.turn)] = 1
                 candidate_boards.append(candidate_board)
         return candidate_boards
 
-    def _print(self):
+    def _print(self, board=None):
+        if board is None:
+            board = self.board
         s = ''
         for i in range(3):
+            s += ' '
             for j in range(3):
-                if self.board[i, j, 0] == 1:
+                if board[i, j, 0] == 1:
                     s += 'X'
-                elif self.board[i, j, 1] == 1:
+                elif board[i, j, 1] == 1:
                     s += 'O'
                 else:
-                    s += '-'
+                    s += ' '
+                if j < 2:
+                    s += '|'
             s += '\n'
+            if i < 2:
+                s += '-------\n'
         print(s)
 
     def play(self, players, verbose=False):

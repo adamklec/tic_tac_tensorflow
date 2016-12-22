@@ -12,12 +12,12 @@ class NeuralNetAgent(object):
         self.checkpoint_path = checkpoint_path
         self.summary_path = summary_path
         self.env = env
-        self.boards_placeholder = tf.placeholder(tf.float32, shape=[None, 3, 3, 2], name='candidate_boards')
+        self.boards_placeholder = tf.placeholder(tf.float32, shape=[None, 3, 3, 3], name='candidate_boards')
         self.turn_placeholder = tf.placeholder(tf.float32, shape=[None, 1], name='turn')
-        reshaped_candidate_boards = tf.reshape(self.boards_placeholder, [tf.shape(self.boards_placeholder)[0], 18])
+        reshaped_candidate_boards = tf.reshape(self.boards_placeholder, [tf.shape(self.boards_placeholder)[0], 27])
         feature_vectors = tf.concat(1, [reshaped_candidate_boards, self.turn_placeholder])
         with tf.variable_scope('layer_1'):
-            W_1 = tf.Variable(tf.truncated_normal([19, 100], stddev=0.1), name='W_1')
+            W_1 = tf.Variable(tf.truncated_normal([28, 100], stddev=0.1), name='W_1')
             b_1 = tf.Variable(tf.constant(0.0, shape=[100]), name='b_1')
             activation_1 = tf.nn.relu(tf.matmul(feature_vectors, W_1) + b_1, name='activation_1')
         with tf.variable_scope('layer_2'):
@@ -122,8 +122,9 @@ class NeuralNetAgent(object):
                 while self.env.reward() is None:
                     candidate_boards = self.env.get_candidate_boards()
                     turns = float(not self.env.turn) * np.ones((len(candidate_boards), 1))
-                    candidate_Js = self.sess.run(self.J, feed_dict={self.boards_placeholder: np.array(candidate_boards),
-                                                                    self.turn_placeholder: turns})
+                    candidate_Js = self.sess.run(self.J,
+                                                 feed_dict={self.boards_placeholder: np.array(candidate_boards),
+                                                            self.turn_placeholder: turns})
                     if self.env.turn:
                         next_idx = np.argmax(candidate_Js)
                         next_J = np.max(candidate_Js)
@@ -142,7 +143,8 @@ class NeuralNetAgent(object):
                         self.sess.run([self.reset_traces_op])
                     self.env.step(candidate_boards[next_idx])
 
-                self.sess.run([self.update_traces_op, self.loss_sum_op, self.increment_turn_count_op, self.increment_global_step_op],
+                self.sess.run([self.update_traces_op,
+                               self.loss_sum_op],
                               feed_dict={self.boards_placeholder: np.array([self.env.board]),
                                          self.turn_placeholder: np.array([[self.env.turn]]),
                                          self.J_next: np.array([[self.env.reward()]])})
@@ -155,9 +157,10 @@ class NeuralNetAgent(object):
             self.test()
             self.sess.run(self.apply_gradients_op)
             self.saver.save(self.sess, self.checkpoint_path + 'checkpoint.ckpt')
-
-            summary = self.sess.run(self.summaries_op, feed_dict={self.batch_size_placeholder: batch_size})
-            summary_writer.add_summary(summary, epoch)
+            if epoch % 100 == 0:
+                summary = self.sess.run(self.summaries_op,
+                                        feed_dict={self.batch_size_placeholder: batch_size})
+                summary_writer.add_summary(summary, epoch)
             self.sess.run([self.loss_sum_reset_op,
                            self.reset_trace_sums_op,
                            self.turn_count_reset_op])
@@ -172,8 +175,9 @@ class NeuralNetAgent(object):
 
     def select_board(self, boards, turn):
         turns = float(self.env.turn) * np.ones((len(boards), 1))
-        Js = self.sess.run(self.J, feed_dict={self.boards_placeholder: np.array(boards),
-                                              self.turn_placeholder: turns})
+        Js = self.sess.run(self.J,
+                           feed_dict={self.boards_placeholder: np.array(boards),
+                                      self.turn_placeholder: turns})
         if turn:
             board_idx = Js.argmin()
         else:
@@ -197,8 +201,9 @@ class NeuralNetAgent(object):
         x_win_score = x_counter[1]*1.0/(x_counter[1]+x_counter[0]+x_counter[-1])
         o_win_score = o_counter[-1]*1.0/(o_counter[1]+o_counter[0]+o_counter[-1])
 
-        self.sess.run([self.update_x_win_op, self.update_o_win_op], feed_dict={self.x_win_placeholder: x_win_score,
-                                                                               self.o_win_placeholder: o_win_score})
+        self.sess.run([self.update_x_win_op, self.update_o_win_op],
+                      feed_dict={self.x_win_placeholder: x_win_score,
+                                 self.o_win_placeholder: o_win_score})
 
         print('x rewards:', x_counter)
         print('o rewards:', o_counter)
