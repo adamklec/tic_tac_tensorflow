@@ -41,8 +41,7 @@ class TicTacToe(object):
             board = self.board
 
         if self.reward() is None:
-            empty_squares = board[:, :, 2]
-            legal_moves = np.where(empty_squares.flatten() == 1)[0]
+            legal_moves = np.where(board[:, :, 2].flatten() == 1)[0]
         else:
             legal_moves = np.array([])
         return legal_moves
@@ -75,15 +74,15 @@ class TicTacToe(object):
             move = player.get_move(self)
             self.make_move(move)
 
+        reward = self.reward()
         if verbose:
             self._print()
-        reward = self.reward()
-        if reward == 1:
-            print("X won!")
-        elif reward == -1:
-            print("O won!")
-        else:
-            print("draw")
+            if reward == 1:
+                print("X won!")
+            elif reward == -1:
+                print("O won!")
+            else:
+                print("draw")
         return self.reward()
 
     def clone(self):

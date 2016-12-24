@@ -13,7 +13,7 @@ class NeuralNetworkAgent(object):
             candidate_env.make_move(legal_move)
             candidate_boards.append(candidate_env.board)
 
-        candidate_Js = self.model.calculate_Js(candidate_boards,  env.turn)
+        candidate_Js = self.model.calculate_J(candidate_boards, env.turn)
 
         if env.turn:
             move_idx = np.argmin(candidate_Js)

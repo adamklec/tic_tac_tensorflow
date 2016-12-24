@@ -3,15 +3,17 @@ import numpy as np
 import time
 from collections import Counter
 from random_agent import RandomAgent
+from nn_agent import NeuralNetworkAgent
+from random import choice
+import copy
 
 
-class NeuralNetModel(object):
-    def __init__(self, env, sess, model_path, summary_path, checkpoint_path, restore=False):
+class NeuralNetworkModel(object):
+    def __init__(self, sess, model_path, summary_path, checkpoint_path, restore=False):
         self.sess = sess
         self.model_path = model_path
         self.checkpoint_path = checkpoint_path
         self.summary_path = summary_path
-        self.env = env
         self.boards_placeholder = tf.placeholder(tf.float32, shape=[None, 3, 3, 3], name='candidate_boards')
         self.turn_placeholder = tf.placeholder(tf.float32, shape=[None, 1], name='turn')
         reshaped_candidate_boards = tf.reshape(self.boards_placeholder, [tf.shape(self.boards_placeholder)[0], 27])
@@ -55,11 +57,8 @@ class NeuralNetModel(object):
 
         tvars = tf.trainable_variables()
 
-        # learning_rate = tf.train.exponential_decay(0.01, global_step, 40000, 0.96, staircase=True, name='learning_rate')
-        # opt = tf.train.GradientDescentOptimizer(learning_rate=learning_rate)
         opt = tf.train.AdamOptimizer()
         grads_and_vars = opt.compute_gradients(self.J, var_list=tvars)
-        # tf.summary.scalar('learning_rate', learning_rate)
 
         with tf.variable_scope('update_traces'):
             for grad, var in grads_and_vars:
@@ -112,14 +111,23 @@ class NeuralNetModel(object):
         if restore:
             self.restore()
 
-    def calculate_Js(self, boards, turn):
-        turns = float(turn) * np.ones((len(boards), 1))
-        Js = self.sess.run(self.J,
-                           feed_dict={self.boards_placeholder: boards,
-                                      self.turn_placeholder: turns})
-        return Js
+    def get_candidate_boards(self, env):
+        legal_moves = env.get_legal_moves()
+        candidate_boards = []
+        for legal_move in legal_moves:
+            candidate_env = env.clone()
+            candidate_env.make_move(legal_move)
+            candidate_boards.append(candidate_env.board)
+        return candidate_boards
 
-    def train(self, num_epochs, batch_size, epsilon, run_name=None, verbose=False):
+    def calculate_J(self, boards, turn):
+        turns = float(turn) * np.ones((len(boards), 1))
+        J = self.sess.run(self.J,
+                          feed_dict={self.boards_placeholder: boards,
+                                     self.turn_placeholder: turns})
+        return J
+
+    def train(self, env, num_epochs, batch_size, epsilon, run_name=None, verbose=False):
         tf.train.write_graph(self.sess.graph_def, self.model_path, 'td_tictactoe.pb', as_text=False)
         if run_name is None:
             summary_writer = tf.summary.FileWriter('{0}{1}'.format(self.summary_path, int(time.time())), graph=self.sess.graph)
@@ -127,15 +135,19 @@ class NeuralNetModel(object):
             summary_writer = tf.summary.FileWriter('{0}{1}'.format(self.summary_path, run_name), graph=self.sess.graph)
 
         for epoch in range(num_epochs):
+            if verbose:
+                print('epoch', epoch)
             for episode in range(batch_size):
-                self.env.reset()
-                while self.env.reward() is None:
-                    candidate_boards = self.env.get_candidate_boards()
-                    turns = float(not self.env.turn) * np.ones((len(candidate_boards), 1))
-                    candidate_Js = self.sess.run(self.J,
-                                                 feed_dict={self.boards_placeholder: np.array(candidate_boards),
-                                                            self.turn_placeholder: turns})
-                    if self.env.turn:
+                # e = 0
+                env.reset()
+                while env.reward() is None:
+                    # e+=1
+                    candidate_boards = self.get_candidate_boards(env)
+                    # print("number of candidate boards:", len(candidate_boards))
+                    # print("number of legal moves:", len(env.get_legal_moves()))
+
+                    candidate_Js = self.calculate_J(candidate_boards, not env.turn)
+                    if env.turn:
                         next_idx = np.argmax(candidate_Js)
                         next_J = np.max(candidate_Js)
 
@@ -144,30 +156,30 @@ class NeuralNetModel(object):
                         next_J = np.min(candidate_Js)
 
                     self.sess.run([self.update_traces_op, self.loss_sum_op, self.increment_turn_count_op, self.increment_global_step_op],
-                                  feed_dict={self.boards_placeholder: np.array([self.env.board]),
-                                             self.turn_placeholder: np.array([[self.env.turn]]),
+                                  feed_dict={self.boards_placeholder: np.array([env.board]),
+                                             self.turn_placeholder: np.array([[env.turn]]),
                                              self.J_next: np.array([[next_J]])})
                     if np.random.rand() < epsilon:
-                        next_idx = np.random.choice(range(len(candidate_Js)))
+                        next_idx = choice(env.get_legal_moves())
                         self.sess.run([self.update_trace_sums_op])
                         self.sess.run([self.reset_traces_op])
-                    self.env.step(candidate_boards[next_idx])
+                    # print("next_idx:", next_idx)
+                    env.make_move(next_idx)
 
                 self.sess.run([self.update_traces_op,
                                self.loss_sum_op],
-                              feed_dict={self.boards_placeholder: np.array([self.env.board]),
-                                         self.turn_placeholder: np.array([[self.env.turn]]),
-                                         self.J_next: np.array([[self.env.reward()]])})
+                              feed_dict={self.boards_placeholder: np.array([env.board]),
+                                         self.turn_placeholder: np.array([[env.turn]]),
+                                         self.J_next: np.array([[env.reward()]])})
                 self.sess.run([self.update_trace_sums_op])
                 self.sess.run([self.reset_traces_op])
-
+                # print("moves in game:", e)
             if verbose:
-                print('epoch', epoch)
                 print('loss avg:', self.sess.run(self.loss_avg_op))
-            self.test()
+            # self.test(env)
             self.sess.run(self.apply_gradients_op)
             self.saver.save(self.sess, self.checkpoint_path + 'checkpoint.ckpt')
-            if epoch % 100 == 0:
+            if epoch % 1 == 0:
                 summary = self.sess.run(self.summaries_op,
                                         feed_dict={self.batch_size_placeholder: batch_size})
                 summary_writer.add_summary(summary, epoch)
@@ -183,29 +195,20 @@ class NeuralNetModel(object):
             print('Restoring checkpoint: {0}'.format(latest_checkpoint_path))
             self.saver.restore(self.sess, latest_checkpoint_path)
 
-    def select_board(self, boards, turn):
-        turns = float(self.env.turn) * np.ones((len(boards), 1))
-        Js = self.sess.run(self.J,
-                           feed_dict={self.boards_placeholder: np.array(boards),
-                                      self.turn_placeholder: turns})
-        if turn:
-            board_idx = Js.argmin()
-        else:
-            board_idx = Js.argmax()
-        return boards[board_idx]
-
-    def test(self):
+    def test(self, env):
         random_agent = RandomAgent()
+        nn_agent = NeuralNetworkAgent(self)
+
         x_counter = Counter()
         for _ in range(100):
-            self.env.reset()
-            x_reward = self.env.play([self, random_agent])
+            env.reset()
+            x_reward = env.play([nn_agent, random_agent])
             x_counter.update([x_reward])
 
         o_counter = Counter()
         for _ in range(100):
-            self.env.reset()
-            o_reward = self.env.play([random_agent, self])
+            env.reset()
+            o_reward = env.play([random_agent, nn_agent])
             o_counter.update([o_reward])
 
         x_win_score = x_counter[1]*1.0/(x_counter[1]+x_counter[0]+x_counter[-1])
