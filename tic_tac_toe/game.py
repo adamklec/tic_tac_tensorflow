@@ -1,12 +1,18 @@
 import numpy as np
 from copy import copy
 
-
 class TicTacToe(object):
-    def __init__(self):
-        self.board = np.zeros((3, 3, 3))
+    def __init__(self, board=None, turn=None):
+        if board is None:
+            self.board = np.zeros((3, 3, 3))
+        else:
+            self.board = board
+
         self.board[:, :, 2] = 1
-        self.turn = False
+        if turn is None:
+            self.turn = False
+        else:
+            self.turn = turn
 
     def reset(self):
         self.board = np.zeros((3, 3, 3))
@@ -25,23 +31,21 @@ class TicTacToe(object):
         else:
             return None
 
-    def step(self, board):
-        self.board = board
+    def make_move(self, move):
+        self.board[int(move / 3), move % 3, int(self.turn)] = 1
+        self.board[int(move / 3), move % 3, 2] = 0
         self.turn = not self.turn
 
-    def get_candidate_boards(self, board=None):
+    def get_legal_moves(self, board=None):
         if board is None:
             board = self.board
 
-        candidate_boards = []
         if self.reward() is None:
-            empty_xs, empty_ys = np.where(board[:, :, 2] == 1)
-            for candidate_action in zip(empty_xs, empty_ys):
-                candidate_board = copy(board)
-                candidate_board[candidate_action[0], candidate_action[1], 2] = 0
-                candidate_board[candidate_action[0], candidate_action[1], int(self.turn)] = 1
-                candidate_boards.append(candidate_board)
-        return candidate_boards
+            empty_squares = board[:, :, 2]
+            legal_moves = np.where(empty_squares.flatten() == 1)[0]
+        else:
+            legal_moves = np.array([])
+        return legal_moves
 
     def _print(self, board=None):
         if board is None:
@@ -65,10 +69,22 @@ class TicTacToe(object):
 
     def play(self, players, verbose=False):
         while self.reward() is None:
-            candidate_boards = self.get_candidate_boards()
-            player = players[int(self.turn)]
-            selected_board = player.select_board(candidate_boards, self.turn)
-            self.step(selected_board)
             if verbose:
                 self._print()
+            player = players[int(self.turn)]
+            move = player.get_move(self)
+            self.make_move(move)
+
+        if verbose:
+            self._print()
+        reward = self.reward()
+        if reward == 1:
+            print("X won!")
+        elif reward == -1:
+            print("O won!")
+        else:
+            print("draw")
         return self.reward()
+
+    def clone(self):
+        return TicTacToe(board=copy(self.board), turn=copy(self.turn))

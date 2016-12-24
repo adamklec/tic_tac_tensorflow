@@ -2,6 +2,7 @@ import random
 
 
 class RandomAgent(object):
-    def select_board(self, boards, turn):
-        selected_board = random.choice(boards)
-        return selected_board
+    def get_move(self, env):
+        legal_moves = env.get_legal_moves()
+        move = random.choice(legal_moves)
+        return move
