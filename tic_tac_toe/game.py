@@ -1,14 +1,15 @@
 import numpy as np
-from copy import copy
+from copy import deepcopy
+
 
 class TicTacToe(object):
     def __init__(self, board=None, turn=None):
         if board is None:
             self.board = np.zeros((3, 3, 3))
+            self.board[:, :, 2] = 1
         else:
             self.board = board
 
-        self.board[:, :, 2] = 1
         if turn is None:
             self.turn = False
         else:
@@ -26,12 +27,13 @@ class TicTacToe(object):
             return 1
         elif any(board[:, :, 1].sum(axis=0) == 3) or any(board[:, :, 1].sum(axis=1) == 3) or board[:, :, 1][np.eye(3) == 1].sum() == 3 or board[:, :, 1][np.rot90(np.eye(3)) == 1].sum() == 3:
             return -1
-        elif board[:, :, :2].sum() == 9:
+        elif board[:, :, 2].sum() == 0:
             return 0
         else:
             return None
 
     def make_move(self, move):
+        assert move in self.get_legal_moves()
         self.board[int(move / 3), move % 3, int(self.turn)] = 1
         self.board[int(move / 3), move % 3, 2] = 0
         self.turn = not self.turn
@@ -45,6 +47,16 @@ class TicTacToe(object):
         else:
             legal_moves = np.array([])
         return legal_moves
+
+    def get_candidate_boards(self):
+        legal_moves = self.get_legal_moves()
+        candidate_boards = []
+        for legal_move in legal_moves:
+            candidate_board = deepcopy(self.board)
+            candidate_board[int(legal_move / 3), legal_move % 3, int(self.turn)] = 1
+            candidate_board[int(legal_move / 3), legal_move % 3, 2] = 0
+            candidate_boards.append(candidate_board)
+        return candidate_boards
 
     def _print(self, board=None):
         if board is None:
@@ -86,4 +98,4 @@ class TicTacToe(object):
         return self.reward()
 
     def clone(self):
-        return TicTacToe(board=copy(self.board), turn=copy(self.turn))
+        return TicTacToe(board=deepcopy(self.board), turn=deepcopy(self.turn))

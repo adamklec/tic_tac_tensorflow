@@ -111,15 +111,6 @@ class NeuralNetworkModel(object):
         if restore:
             self.restore()
 
-    def get_candidate_boards(self, env):
-        legal_moves = env.get_legal_moves()
-        candidate_boards = []
-        for legal_move in legal_moves:
-            candidate_env = env.clone()
-            candidate_env.make_move(legal_move)
-            candidate_boards.append(candidate_env.board)
-        return candidate_boards
-
     def calculate_J(self, boards, turn):
         turns = float(turn) * np.ones((len(boards), 1))
         J = self.sess.run(self.J,
@@ -128,6 +119,7 @@ class NeuralNetworkModel(object):
         return J
 
     def train(self, env, num_epochs, batch_size, epsilon, run_name=None, verbose=False):
+
         tf.train.write_graph(self.sess.graph_def, self.model_path, 'td_tictactoe.pb', as_text=False)
         if run_name is None:
             summary_writer = tf.summary.FileWriter('{0}{1}'.format(self.summary_path, int(time.time())), graph=self.sess.graph)
@@ -138,33 +130,28 @@ class NeuralNetworkModel(object):
             if verbose:
                 print('epoch', epoch)
             for episode in range(batch_size):
-                # e = 0
                 env.reset()
                 while env.reward() is None:
-                    # e+=1
-                    candidate_boards = self.get_candidate_boards(env)
-                    # print("number of candidate boards:", len(candidate_boards))
-                    # print("number of legal moves:", len(env.get_legal_moves()))
-
+                    candidate_boards = env.get_candidate_boards()
                     candidate_Js = self.calculate_J(candidate_boards, not env.turn)
                     if env.turn:
-                        next_idx = np.argmax(candidate_Js)
+                        move_idx = np.argmax(candidate_Js)
                         next_J = np.max(candidate_Js)
 
                     else:
-                        next_idx = np.argmin(candidate_Js)
+                        move_idx = np.argmin(candidate_Js)
                         next_J = np.min(candidate_Js)
 
+                    move = env.get_legal_moves()[move_idx]
                     self.sess.run([self.update_traces_op, self.loss_sum_op, self.increment_turn_count_op, self.increment_global_step_op],
                                   feed_dict={self.boards_placeholder: np.array([env.board]),
                                              self.turn_placeholder: np.array([[env.turn]]),
                                              self.J_next: np.array([[next_J]])})
                     if np.random.rand() < epsilon:
-                        next_idx = choice(env.get_legal_moves())
+                        move = choice(env.get_legal_moves())
                         self.sess.run([self.update_trace_sums_op])
                         self.sess.run([self.reset_traces_op])
-                    # print("next_idx:", next_idx)
-                    env.make_move(next_idx)
+                    env.make_move(move)
 
                 self.sess.run([self.update_traces_op,
                                self.loss_sum_op],
@@ -173,10 +160,10 @@ class NeuralNetworkModel(object):
                                          self.J_next: np.array([[env.reward()]])})
                 self.sess.run([self.update_trace_sums_op])
                 self.sess.run([self.reset_traces_op])
-                # print("moves in game:", e)
             if verbose:
                 print('loss avg:', self.sess.run(self.loss_avg_op))
             self.test(env)
+
             self.sess.run(self.apply_gradients_op)
             self.saver.save(self.sess, self.checkpoint_path + 'checkpoint.ckpt')
             summary = self.sess.run(self.summaries_op,

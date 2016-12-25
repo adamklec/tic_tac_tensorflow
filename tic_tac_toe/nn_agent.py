@@ -7,12 +7,7 @@ class NeuralNetworkAgent(object):
 
     def get_move(self, env):
         legal_moves = env.get_legal_moves()
-        candidate_boards = []
-        for legal_move in legal_moves:
-            candidate_env = env.clone()
-            candidate_env.make_move(legal_move)
-            candidate_boards.append(candidate_env.board)
-
+        candidate_boards = env.get_candidate_boards()
         candidate_Js = self.model.calculate_J(candidate_boards, env.turn)
 
         if env.turn:

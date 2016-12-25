@@ -11,7 +11,7 @@ def main():
                                       '/Users/adam/Documents/projects/td_learning/tic_tac_toe/log/',
                                       '/Users/adam/Documents/projects/td_learning/tic_tac_toe/checkpoints/')
         env = TicTacToe()
-        nn_model.train(env, 1000000, 100, 0.1, run_name='test2', verbose=True)
+        nn_model.train(env, 1000000, 100, 0.1, verbose=True)
 
 if __name__ == "__main__":
     main()
