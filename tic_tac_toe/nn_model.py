@@ -176,13 +176,12 @@ class NeuralNetworkModel(object):
                 # print("moves in game:", e)
             if verbose:
                 print('loss avg:', self.sess.run(self.loss_avg_op))
-            # self.test(env)
+            self.test(env)
             self.sess.run(self.apply_gradients_op)
             self.saver.save(self.sess, self.checkpoint_path + 'checkpoint.ckpt')
-            if epoch % 1 == 0:
-                summary = self.sess.run(self.summaries_op,
-                                        feed_dict={self.batch_size_placeholder: batch_size})
-                summary_writer.add_summary(summary, epoch)
+            summary = self.sess.run(self.summaries_op,
+                                    feed_dict={self.batch_size_placeholder: batch_size})
+            summary_writer.add_summary(summary, epoch)
             self.sess.run([self.loss_sum_reset_op,
                            self.reset_trace_sums_op,
                            self.turn_count_reset_op])
