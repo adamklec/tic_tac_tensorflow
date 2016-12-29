@@ -32,11 +32,15 @@ class NeuralNetworkAgent(object):
 
         self.board_placeholder = tf.placeholder(tf.float32, shape=[1, 3, 3, 3], name='board_placeholder')
         feature_vector = self.make_feature_vectors(self.board_placeholder, self.turn_placeholder)
-        value = self.neural_net(feature_vector)
 
         self.next_boards_placeholder = tf.placeholder(tf.float32, shape=[None, 3, 3, 3], name='next_boards')
         feature_vectors = self.make_feature_vectors(self.next_boards_placeholder, tf.logical_not(self.turn_placeholder))
-        next_values = self.neural_net(feature_vectors)
+
+        with tf.variable_scope('value_function') as scope:
+            value = self.neural_net(feature_vector)
+            scope.reuse_variables()
+            next_values = self.neural_net(feature_vectors)
+
         next_value = tf.cond(self.turn_placeholder, lambda: tf.reduce_min(next_values), lambda: tf.reduce_max(next_values))
         self.next_board_idx = tf.cond(self.turn_placeholder, lambda: tf.argmin(next_values, axis=0), lambda: tf.argmax(next_values, axis=0))
         # next_board = tf.slice(self.next_boards_placeholder, [next_board_idx, 0, 0, 0], [1, 3, 3, 3])
@@ -136,12 +140,12 @@ class NeuralNetworkAgent(object):
     def neural_net(self, feature_vector):
         with tf.variable_scope("value_function") as scope:
             with tf.variable_scope('layer_1'):
-                W_1 = tf.Variable(tf.truncated_normal([28, 100], stddev=0.1), name='W_1')
-                b_1 = tf.Variable(tf.constant(0.0, shape=[100]), name='b_1')
+                W_1 = tf.get_variable('W_1', initializer=tf.truncated_normal([28, 100], stddev=0.1))
+                b_1 = tf.get_variable('b_1', initializer=tf.constant(0.0, shape=[100]))
                 activation_1 = tf.nn.relu(tf.matmul(feature_vector, W_1) + b_1, name='activation_1')
             with tf.variable_scope('layer_2'):
-                W_2 = tf.Variable(tf.truncated_normal([100, 1], stddev=0.1), name='W_2')
-                b_2 = tf.Variable(tf.constant(0.0, shape=[1]), name='b_2')
+                W_2 = tf.get_variable('W_2', initializer=tf.truncated_normal([100, 1], stddev=0.1))
+                b_2 = tf.get_variable('b_2', initializer=tf.constant(0.0, shape=[1]))
                 value = tf.nn.tanh(tf.matmul(activation_1, W_2) + b_2, name='J')
                 return value
 
