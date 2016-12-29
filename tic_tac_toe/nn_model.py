@@ -3,9 +3,7 @@ import numpy as np
 import time
 from collections import Counter
 from random_agent import RandomAgent
-from nn_agent import NeuralNetworkAgent
 from random import choice
-import copy
 
 
 class NeuralNetworkModel(object):
@@ -14,83 +12,97 @@ class NeuralNetworkModel(object):
         self.model_path = model_path
         self.checkpoint_path = checkpoint_path
         self.summary_path = summary_path
-        self.boards_placeholder = tf.placeholder(tf.float32, shape=[None, 3, 3, 3], name='candidate_boards')
-        self.turn_placeholder = tf.placeholder(tf.float32, shape=[None, 1], name='turn')
-        reshaped_candidate_boards = tf.reshape(self.boards_placeholder, [tf.shape(self.boards_placeholder)[0], 27])
-        feature_vectors = tf.concat(1, [reshaped_candidate_boards, self.turn_placeholder])
-        with tf.variable_scope('layer_1'):
-            W_1 = tf.Variable(tf.truncated_normal([28, 100], stddev=0.1), name='W_1')
-            b_1 = tf.Variable(tf.constant(0.0, shape=[100]), name='b_1')
-            activation_1 = tf.nn.relu(tf.matmul(feature_vectors, W_1) + b_1, name='activation_1')
-        with tf.variable_scope('layer_2'):
-            W_2 = tf.Variable(tf.truncated_normal([100, 1], stddev=0.1), name='W_2')
-            b_2 = tf.Variable(tf.constant(0.0, shape=[1]), name='b_2')
-            self.J = tf.nn.tanh(tf.matmul(activation_1, W_2) + b_2, name='J')
 
-        self.J_next = tf.placeholder('float', [1, 1], name='J_next')
-        delta_op = tf.reduce_sum(self.J_next - self.J, name='delta')
+        game_turn_count = tf.Variable(0, name='game_turn_count', trainable=False, dtype=tf.int32)
+        batch_turn_count = tf.Variable(0, name='batch_turn_count', trainable=False, dtype=tf.int32)
+        global_turn_count = tf.Variable(0, name='global_turn_count', trainable=False, dtype=tf.int32)
+        self.increment_turn_count_op = tf.group(game_turn_count.assign_add(1),
+                                                batch_turn_count.assign_add(1),
+                                                global_turn_count.assign_add(1))
+        self.reset_game_turn_count_op = game_turn_count.assign(0)
+        self.reset_batch_turn_count_op = batch_turn_count.assign(0)
+        self.reset_global_turn_count_op = global_turn_count.assign(0)
+        tf.summary.scalar('global_turn_count', global_turn_count)
 
-        turn_count = tf.Variable(tf.constant(0.0), name='turn_number', trainable=False)
-        global_step = tf.Variable(0, trainable=False)
-        self.increment_turn_count_op = turn_count.assign_add(1.0)
-        self.increment_global_step_op = global_step.assign_add(1)
-        self.turn_count_reset_op = turn_count.assign(0.0)
-        tf.summary.scalar('global_step', global_step)
+        self.batch_size_placeholder = tf.placeholder(tf.float32, shape=[], name='batch_size_placeholder')
+        self.mean_turn_count_per_game = tf.cast(batch_turn_count, tf.float32)/self.batch_size_placeholder
+        tf.summary.scalar('meanturn_count_per_game', self.mean_turn_count_per_game)
 
-        self.batch_size_placeholder = tf.placeholder(tf.float32, [], name='batch_size')
-        loss_sum = tf.Variable(tf.constant(0.0), name='loss_sum', trainable=False)
-        loss_op = tf.reduce_mean(tf.square(delta_op), name='loss')
-        self.loss_sum_op = loss_sum.assign_add(loss_op)
-        self.loss_avg_op = loss_sum / tf.maximum(turn_count, 1.0)
-        self.loss_sum_reset_op = loss_sum.assign(0.0)
-        tf.summary.scalar('loss_avg', self.loss_avg_op)
-        tf.summary.scalar('average_turn_count', turn_count/self.batch_size_placeholder)
+        self.turn_placeholder = tf.placeholder(tf.bool, shape=[], name='turn')
 
-        lamda = tf.maximum(0.7, tf.train.exponential_decay(0.9, global_step, 30000, 0.96, staircase=True), name='lambda')
-        tf.summary.scalar('lamda', lamda)
+        self.board_placeholder = tf.placeholder(tf.float32, shape=[1, 3, 3, 3], name='board_placeholder')
+        feature_vector = self.make_feature_vectors(self.board_placeholder, self.turn_placeholder)
+        value = self.neural_net(feature_vector)
 
-        update_traces = []
-        update_trace_sums = []
-        reset_trace_sums = []
-        reset_traces = []
-        trace_sums = []
+        self.next_boards_placeholder = tf.placeholder(tf.float32, shape=[None, 3, 3, 3], name='next_boards')
+        feature_vectors = self.make_feature_vectors(self.next_boards_placeholder, tf.logical_not(self.turn_placeholder))
+        next_values = self.neural_net(feature_vectors)
+        next_value = tf.cond(self.turn_placeholder, lambda: tf.reduce_min(next_values), lambda: tf.reduce_max(next_values))
+        self.next_board_idx = tf.cond(self.turn_placeholder, lambda: tf.argmin(next_values, axis=0), lambda: tf.argmax(next_values, axis=0))
+        # next_board = tf.slice(self.next_boards_placeholder, [next_board_idx, 0, 0, 0], [1, 3, 3, 3])
+
+        self.reward_placeholder = tf.placeholder(tf.float32, shape=[], name='reward_placeholder')
+
+        target_value = tf.cond(tf.shape(self.next_boards_placeholder)[0] > 0, lambda: next_value, lambda: self.reward_placeholder)
+        delta = tf.reduce_sum(target_value - value)
+        loss = tf.reduce_mean(tf.square(target_value - value, name='loss'))
+
+        self.batch_loss = tf.Variable(0.0, trainable=False, name='loss_sum')
+        self.mean_step_loss = self.batch_loss / tf.maximum(1.0, tf.cast(batch_turn_count, tf.float32))
+        self.update_batch_loss_op = self.batch_loss.assign_add(loss)
+        self.reset_batch_loss_op = self.batch_loss.assign(0.0)
+
+        tf.summary.scalar('mean_step_loss', self.mean_step_loss)
 
         tvars = tf.trainable_variables()
-
         opt = tf.train.AdamOptimizer()
-        grads_and_vars = opt.compute_gradients(self.J, var_list=tvars)
+        grads_and_vars = opt.compute_gradients(value, var_list=tvars)
+
+        lamda = tf.constant(0.7, name='lamba')
+        tf.summary.scalar('lamda', lamda)
+
+        grad_traces = []
+        update_grad_traces = []
+        reset_grad_traces = []
+
+        grad_trace_sums = []
+        update_grad_trace_sums = []
+        reset_grad_trace_sums = []
 
         with tf.variable_scope('update_traces'):
             for grad, var in grads_and_vars:
                 if grad is None:
                     grad = tf.zeros_like(var)
                 with tf.variable_scope('trace'):
-                    trace = tf.Variable(tf.zeros(var.get_shape()), trainable=False, name='trace')
-                    update_trace_op = trace.assign(delta_op * ((lamda * trace) + grad))
-                    update_traces.append(update_trace_op)
+                    grad_trace = tf.Variable(tf.zeros(grad.get_shape()), trainable=False, name='grad_trace')
+                    grad_traces.append(grad_trace)
 
-                    reset_trace_op = trace.assign(tf.zeros_like(trace))
-                    reset_traces.append(reset_trace_op)
+                    update_grad_trace_op = grad_trace.assign_add(-delta * ((lamda * grad_trace) + grad)) #negaive sign for optimizer
+                    update_grad_traces.append(update_grad_trace_op)
 
-                trace_sum = tf.Variable(tf.zeros(var.get_shape()), trainable=False, name='trace_sum')
-                trace_sums.append(trace_sum)
+                    reset_grad_trace_op = grad_trace.assign(tf.zeros_like(grad_trace))
+                    reset_grad_traces.append(reset_grad_trace_op)
 
-                update_trace_sum_op = trace_sum.assign_add(trace)
-                update_trace_sums.append(update_trace_sum_op)
-                reset_trace_sum_op = trace_sum.assign(tf.zeros_like(trace_sum))
-                reset_trace_sums.append(reset_trace_sum_op)
+                    grad_trace_sum = tf.Variable(tf.zeros(var.get_shape()), trainable=False, name='grad_trace')
+                    grad_trace_sums.append(grad_trace_sum)
 
-        with tf.variable_scope('apply_traces'):
-            self.apply_gradients_op = opt.apply_gradients(zip([-ts / turn_count for ts in trace_sums], tvars), global_step=global_step)
+                    update_grad_trace_sum_op = grad_trace_sum.assign_add(grad_trace)
+                    update_grad_trace_sums.append(update_grad_trace_sum_op)
 
-        for tvar, ts in zip(tvars, trace_sums):
+                    reset_grad_trace_sum_op = grad_trace.assign(tf.zeros_like(grad_trace_sum))
+                    reset_grad_trace_sums.append(reset_grad_trace_sum_op)
+
+        for tvar, grad_trace_sum in zip(tvars, grad_trace_sums):
             tf.summary.histogram(tvar.name, tvar)
-            tf.summary.histogram(tvar.name + '/trace_sums', ts)
+            tf.summary.histogram(tvar.name + '/grad_traces_sum', grad_trace_sum)
 
-        self.update_traces_op = tf.group(*update_traces, name='update_traces')
-        self.update_trace_sums_op = tf.group(*update_trace_sums, name='update_trace_sums')
-        self.reset_trace_sums_op = tf.group(*reset_trace_sums, name='reset_trace_sums')
-        self.reset_traces_op = tf.group(*reset_traces, name='reset_traces')
+        self.update_grad_traces_op = tf.group(*update_grad_traces)
+        self.reset_grad_traces_op = tf.group(*reset_grad_traces)
+
+        self.update_grad_trace_sums_op = tf.group(*update_grad_trace_sums)
+        self.reset_grad_trace_sums_op = tf.group(*reset_grad_trace_sums)
+
+        self.apply_grad_trace_sums_op = opt.apply_gradients(zip(grad_trace_sums, tvars), global_step=global_turn_count)
 
         xwin = tf.Variable(tf.constant(0.0), name='xwin', trainable=False)
         self.x_win_placeholder = tf.placeholder(tf.float32, shape=[], name='x_win_placeholder')
@@ -111,15 +123,29 @@ class NeuralNetworkModel(object):
         if restore:
             self.restore()
 
-    def calculate_J(self, boards, turn):
-        turns = float(turn) * np.ones((len(boards), 1))
-        J = self.sess.run(self.J,
-                          feed_dict={self.boards_placeholder: boards,
-                                     self.turn_placeholder: turns})
-        return J
+    def make_feature_vectors(self, boards, turn):
+        turn = tf.reshape(tf.cast(turn, tf.float32), [-1, 1])
+        turns = tf.tile(turn, [1, tf.shape(boards)[0]])
+        turns = tf.transpose(turns)
+
+        reshaped_candidate_next_boards = tf.reshape(boards, [tf.shape(boards)[0], 27])
+        feature_vectors = tf.concat(1, [reshaped_candidate_next_boards, turns])
+
+        return feature_vectors
+
+    def neural_net(self, feature_vector):
+        with tf.variable_scope("value_function") as scope:
+            with tf.variable_scope('layer_1'):
+                W_1 = tf.Variable(tf.truncated_normal([28, 100], stddev=0.1), name='W_1')
+                b_1 = tf.Variable(tf.constant(0.0, shape=[100]), name='b_1')
+                activation_1 = tf.nn.relu(tf.matmul(feature_vector, W_1) + b_1, name='activation_1')
+            with tf.variable_scope('layer_2'):
+                W_2 = tf.Variable(tf.truncated_normal([100, 1], stddev=0.1), name='W_2')
+                b_2 = tf.Variable(tf.constant(0.0, shape=[1]), name='b_2')
+                value = tf.nn.tanh(tf.matmul(activation_1, W_2) + b_2, name='J')
+                return value
 
     def train(self, env, num_epochs, batch_size, epsilon, run_name=None, verbose=False):
-
         tf.train.write_graph(self.sess.graph_def, self.model_path, 'td_tictactoe.pb', as_text=False)
         if run_name is None:
             summary_writer = tf.summary.FileWriter('{0}{1}'.format(self.summary_path, int(time.time())), graph=self.sess.graph)
@@ -132,46 +158,44 @@ class NeuralNetworkModel(object):
             for episode in range(batch_size):
                 env.reset()
                 while env.reward() is None:
-                    candidate_boards = env.get_candidate_boards()
-                    candidate_Js = self.calculate_J(candidate_boards, not env.turn)
-                    if env.turn:
-                        move_idx = np.argmax(candidate_Js)
-                        next_J = np.max(candidate_Js)
+                    legal_moves = env.get_legal_moves()
+                    move_idx, _, _, _ = self.sess.run([self.next_board_idx, self.update_grad_traces_op, self.increment_turn_count_op, self.update_batch_loss_op],
+                                                      feed_dict={self.turn_placeholder: env.turn,
+                                                                 self.board_placeholder: [env.board],
+                                                                 self.next_boards_placeholder: env.get_candidate_boards(),
+                                                                 self.reward_placeholder: 0.0})
+                    move = legal_moves[move_idx]
 
-                    else:
-                        move_idx = np.argmin(candidate_Js)
-                        next_J = np.min(candidate_Js)
-
-                    move = env.get_legal_moves()[move_idx]
-                    self.sess.run([self.update_traces_op, self.loss_sum_op, self.increment_turn_count_op, self.increment_global_step_op],
-                                  feed_dict={self.boards_placeholder: np.array([env.board]),
-                                             self.turn_placeholder: np.array([[env.turn]]),
-                                             self.J_next: np.array([[next_J]])})
                     if np.random.rand() < epsilon:
-                        move = choice(env.get_legal_moves())
-                        self.sess.run([self.update_trace_sums_op])
-                        self.sess.run([self.reset_traces_op])
+                        move = choice(legal_moves)
+                        self.sess.run(self.update_grad_trace_sums_op)
+                        self.sess.run(self.reset_grad_traces_op)
+
                     env.make_move(move)
 
-                self.sess.run([self.update_traces_op,
-                               self.loss_sum_op],
-                              feed_dict={self.boards_placeholder: np.array([env.board]),
-                                         self.turn_placeholder: np.array([[env.turn]]),
-                                         self.J_next: np.array([[env.reward()]])})
-                self.sess.run([self.update_trace_sums_op])
-                self.sess.run([self.reset_traces_op])
+                self.sess.run([self.update_grad_traces_op, self.update_batch_loss_op],
+                              feed_dict={self.turn_placeholder: int(env.turn),
+                                         self.board_placeholder: [env.board],
+                                         self.next_boards_placeholder: np.zeros((0, 3, 3, 3)),
+                                         self.reward_placeholder: env.reward()})
+                self.sess.run([self.update_grad_trace_sums_op])
+                self.sess.run([self.reset_grad_traces_op, self.reset_game_turn_count_op])
+
+            self.sess.run(self.apply_grad_trace_sums_op)
+
             if verbose:
-                print('loss avg:', self.sess.run(self.loss_avg_op))
+                print('mean_step_loss:', self.sess.run(self.mean_step_loss))
+
             self.test(env)
 
-            self.sess.run(self.apply_gradients_op)
             self.saver.save(self.sess, self.checkpoint_path + 'checkpoint.ckpt')
-            summary = self.sess.run(self.summaries_op,
-                                    feed_dict={self.batch_size_placeholder: batch_size})
+            summary = self.sess.run(self.summaries_op, feed_dict={self.batch_size_placeholder: batch_size})
             summary_writer.add_summary(summary, epoch)
-            self.sess.run([self.loss_sum_reset_op,
-                           self.reset_trace_sums_op,
-                           self.turn_count_reset_op])
+
+            self.sess.run([self.reset_batch_loss_op,
+                           self.reset_grad_trace_sums_op,
+                           self.reset_batch_turn_count_op])
+
         summary_writer.close()
 
     def restore(self):
@@ -183,18 +207,17 @@ class NeuralNetworkModel(object):
 
     def test(self, env):
         random_agent = RandomAgent()
-        nn_agent = NeuralNetworkAgent(self)
 
         x_counter = Counter()
         for _ in range(100):
             env.reset()
-            x_reward = env.play([nn_agent, random_agent])
+            x_reward = env.play([self, random_agent])
             x_counter.update([x_reward])
 
         o_counter = Counter()
         for _ in range(100):
             env.reset()
-            o_reward = env.play([random_agent, nn_agent])
+            o_reward = env.play([random_agent, self])
             o_counter.update([o_reward])
 
         x_win_score = x_counter[1]*1.0/(x_counter[1]+x_counter[0]+x_counter[-1])
@@ -207,3 +230,10 @@ class NeuralNetworkModel(object):
         print('x rewards:', x_counter)
         print('o rewards:', o_counter)
         print(100 * '-')
+
+    def get_move(self, env):
+        legal_moves = env.get_legal_moves()
+        move_idx = self.sess.run(self.next_board_idx,
+                                 feed_dict={self.turn_placeholder: env.turn,
+                                            self.next_boards_placeholder: env.get_candidate_boards()})
+        return legal_moves[move_idx]
