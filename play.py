@@ -1,8 +1,7 @@
 import tensorflow as tf
-from human_agent import HumanAgent
-from random_agent import RandomAgent
-from nn_agent import NeuralNetworkAgent
-from nn_agent import NeuralNetworkAgent
+from agents.human_agent import HumanAgent
+from agents.random_agent import RandomAgent
+from agents.nn_agent import NeuralNetworkAgent
 from game import TicTacToe
 
 

@@ -2,7 +2,7 @@ import tensorflow as tf
 import numpy as np
 import time
 from collections import Counter
-from random_agent import RandomAgent
+from agents.random_agent import RandomAgent
 from random import choice
 
 
