@@ -20,7 +20,7 @@ class TicTacToe(object):
         self.board[:, :, 2] = 1
         self.turn = False
 
-    def reward(self, board=None):
+    def get_reward(self, board=None):
         if board is None:
             board = self.board
         if any(board[:, :, 0].sum(axis=0) == 3) or any(board[:, :, 0].sum(axis=1) == 3) or board[:, :, 0][np.eye(3) == 1].sum() == 3 or board[:, :, 0][np.rot90(np.eye(3)) == 1].sum() == 3:
@@ -42,7 +42,7 @@ class TicTacToe(object):
         if board is None:
             board = self.board
 
-        if self.reward() is None:
+        if self.get_reward() is None:
             legal_moves = np.where(board[:, :, 2].flatten() == 1)[0]
         else:
             legal_moves = np.array([])
@@ -79,14 +79,14 @@ class TicTacToe(object):
         print(s)
 
     def play(self, players, verbose=False):
-        while self.reward() is None:
+        while self.get_reward() is None:
             if verbose:
                 self._print()
             player = players[int(self.turn)]
             move = player.get_move(self)
             self.make_move(move)
 
-        reward = self.reward()
+        reward = self.get_reward()
         if verbose:
             self._print()
             if reward == 1:
@@ -95,7 +95,7 @@ class TicTacToe(object):
                 print("O won!")
             else:
                 print("draw")
-        return self.reward()
+        return self.get_reward()
 
     def clone(self):
         return TicTacToe(board=deepcopy(self.board), turn=deepcopy(self.turn))

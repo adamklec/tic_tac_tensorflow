@@ -13,45 +13,46 @@ class NeuralNetworkAgent(object):
         self.checkpoint_path = checkpoint_path
         self.summary_path = summary_path
 
-        game_turn_count = tf.Variable(0, name='game_turn_count', trainable=False, dtype=tf.int32)
-        batch_turn_count = tf.Variable(0, name='batch_turn_count', trainable=False, dtype=tf.int32)
-        global_turn_count = tf.Variable(0, name='global_turn_count', trainable=False, dtype=tf.int32)
-        self.increment_turn_count_op = tf.group(game_turn_count.assign_add(1),
-                                                batch_turn_count.assign_add(1),
-                                                global_turn_count.assign_add(1))
-        self.reset_game_turn_count_op = game_turn_count.assign(0)
-        self.reset_batch_turn_count_op = batch_turn_count.assign(0)
-        self.reset_global_turn_count_op = global_turn_count.assign(0)
-        tf.summary.scalar('global_turn_count', global_turn_count)
-
         self.batch_size_placeholder = tf.placeholder(tf.float32, shape=[], name='batch_size_placeholder')
-        self.mean_turn_count_per_game = tf.cast(batch_turn_count, tf.float32)/self.batch_size_placeholder
-        tf.summary.scalar('meanturn_count_per_game', self.mean_turn_count_per_game)
+
+        with tf.variable_scope('turn_count'):
+            game_turn_count = tf.Variable(0, name='game_turn_count', trainable=False, dtype=tf.int32)
+            batch_turn_count = tf.Variable(0, name='batch_turn_count', trainable=False, dtype=tf.int32)
+            global_turn_count = tf.Variable(0, name='global_turn_count', trainable=False, dtype=tf.int32)
+            self.increment_turn_count_op = tf.group(game_turn_count.assign_add(1),
+                                                    batch_turn_count.assign_add(1),
+                                                    global_turn_count.assign_add(1))
+            self.reset_game_turn_count_op = game_turn_count.assign(0)
+            self.reset_batch_turn_count_op = batch_turn_count.assign(0)
+            self.reset_global_turn_count_op = global_turn_count.assign(0)
+            self.mean_turn_count_per_game = tf.cast(batch_turn_count, tf.float32)/self.batch_size_placeholder
+
+        tf.summary.scalar('mean_turn_count_per_game', self.mean_turn_count_per_game)
 
         self.turn_placeholder = tf.placeholder(tf.bool, shape=[], name='turn')
-
         self.board_placeholder = tf.placeholder(tf.float32, shape=[1, 3, 3, 3], name='board_placeholder')
-        feature_vector = self.make_feature_vectors(self.board_placeholder, self.turn_placeholder)
-
         self.next_boards_placeholder = tf.placeholder(tf.float32, shape=[None, 3, 3, 3], name='next_boards')
-        feature_vectors = self.make_feature_vectors(self.next_boards_placeholder, tf.logical_not(self.turn_placeholder))
 
-        with tf.variable_scope('value_function') as scope:
-            value = self.neural_net(feature_vector)
+        with tf.variable_scope('feature_vectors'):
+            feature_vector = self.make_feature_vectors(self.board_placeholder, self.turn_placeholder)
+            feature_vectors = self.make_feature_vectors(self.next_boards_placeholder, tf.logical_not(self.turn_placeholder))
+
+        with tf.variable_scope('state_value_function') as scope:
+            value = self.neural_network(feature_vector)
             scope.reuse_variables()
-            next_values = self.neural_net(feature_vectors)
+            next_values = self.neural_network(feature_vectors)
 
-        next_value = tf.cond(self.turn_placeholder, lambda: tf.reduce_min(next_values), lambda: tf.reduce_max(next_values))
-        self.next_board_idx = tf.cond(self.turn_placeholder, lambda: tf.argmin(next_values, axis=0), lambda: tf.argmax(next_values, axis=0))
+        next_value = tf.cond(self.turn_placeholder, lambda: tf.reduce_min(next_values), lambda: tf.reduce_max(next_values), name='next_value')
+        self.next_board_idx = tf.cond(self.turn_placeholder, lambda: tf.argmin(next_values, axis=0), lambda: tf.argmax(next_values, axis=0), name='next_board_idx')
         # next_board = tf.slice(self.next_boards_placeholder, [next_board_idx, 0, 0, 0], [1, 3, 3, 3])
 
         self.reward_placeholder = tf.placeholder(tf.float32, shape=[], name='reward_placeholder')
 
-        target_value = tf.cond(tf.shape(self.next_boards_placeholder)[0] > 0, lambda: next_value, lambda: self.reward_placeholder)
-        delta = tf.reduce_sum(target_value - value)
-        loss = tf.reduce_mean(tf.square(target_value - value, name='loss'))
+        target_value = tf.cond(tf.shape(self.next_boards_placeholder)[0] > 0, lambda: next_value, lambda: self.reward_placeholder, name='target_value')
+        delta = tf.sub(target_value, value, name='delta')
+        loss = tf.reduce_sum(tf.square(delta, name='loss'))
 
-        self.batch_loss = tf.Variable(0.0, trainable=False, name='loss_sum')
+        self.batch_loss = tf.Variable(0.0, trainable=False, name='batch_loss')
         self.mean_step_loss = self.batch_loss / tf.maximum(1.0, tf.cast(batch_turn_count, tf.float32))
         self.update_batch_loss_op = self.batch_loss.assign_add(loss)
         self.reset_batch_loss_op = self.batch_loss.assign(0.0)
@@ -63,50 +64,52 @@ class NeuralNetworkAgent(object):
         grads_and_vars = opt.compute_gradients(value, var_list=tvars)
 
         lamda = tf.constant(0.7, name='lamba')
-        tf.summary.scalar('lamda', lamda)
+        # tf.summary.scalar('lamda', lamda)
 
-        grad_traces = []
-        update_grad_traces = []
-        reset_grad_traces = []
+        traces = []
+        update_traces = []
+        reset_traces = []
 
-        grad_trace_sums = []
-        update_grad_trace_sums = []
-        reset_grad_trace_sums = []
+        trace_sums = []
+        update_trace_sums = []
+        reset_trace_sums = []
 
         with tf.variable_scope('update_traces'):
             for grad, var in grads_and_vars:
                 if grad is None:
                     grad = tf.zeros_like(var)
                 with tf.variable_scope('trace'):
-                    grad_trace = tf.Variable(tf.zeros(grad.get_shape()), trainable=False, name='grad_trace')
-                    grad_traces.append(grad_trace)
+                    trace = tf.Variable(tf.zeros(grad.get_shape()), trainable=False, name='trace')
+                    traces.append(trace)
 
-                    update_grad_trace_op = grad_trace.assign_add(-delta * ((lamda * grad_trace) + grad)) #negaive sign for optimizer
-                    update_grad_traces.append(update_grad_trace_op)
+                    update_trace_op = trace.assign((lamda * trace) + grad)
+                    update_traces.append(update_trace_op)
 
-                    reset_grad_trace_op = grad_trace.assign(tf.zeros_like(grad_trace))
-                    reset_grad_traces.append(reset_grad_trace_op)
+                    reset_trace_op = trace.assign(tf.zeros_like(trace))
+                    reset_traces.append(reset_trace_op)
 
-                    grad_trace_sum = tf.Variable(tf.zeros(var.get_shape()), trainable=False, name='grad_trace')
-                    grad_trace_sums.append(grad_trace_sum)
+                    delta_trace = tf.reduce_sum(delta) * trace
 
-                    update_grad_trace_sum_op = grad_trace_sum.assign_add(grad_trace)
-                    update_grad_trace_sums.append(update_grad_trace_sum_op)
+                    trace_sum = tf.Variable(tf.zeros(var.get_shape()), trainable=False, name='trace_sum')
+                    trace_sums.append(trace_sum)
 
-                    reset_grad_trace_sum_op = grad_trace.assign(tf.zeros_like(grad_trace_sum))
-                    reset_grad_trace_sums.append(reset_grad_trace_sum_op)
+                    with tf.control_dependencies([update_trace_op]):
+                        update_trace_sum_op = trace_sum.assign_add(delta_trace)
+                    update_trace_sums.append(update_trace_sum_op)
 
-        for tvar, grad_trace_sum in zip(tvars, grad_trace_sums):
+                    reset_trace_sum_op = trace_sum.assign(tf.zeros_like(trace_sum))
+                    reset_trace_sums.append(reset_trace_sum_op)
+
+        for tvar, trace_sum in zip(tvars, trace_sums):
             tf.summary.histogram(tvar.name, tvar)
-            tf.summary.histogram(tvar.name + '/grad_traces_sum', grad_trace_sum)
+            tf.summary.histogram(tvar.name + '/trace_sum', trace_sum)
 
-        self.update_grad_traces_op = tf.group(*update_grad_traces)
-        self.reset_grad_traces_op = tf.group(*reset_grad_traces)
+        self.update_traces_op = tf.group(*update_traces)
+        self.reset_traces_op = tf.group(*reset_traces)
 
-        self.update_grad_trace_sums_op = tf.group(*update_grad_trace_sums)
-        self.reset_grad_trace_sums_op = tf.group(*reset_grad_trace_sums)
-
-        self.apply_grad_trace_sums_op = opt.apply_gradients(zip(grad_trace_sums, tvars), global_step=global_turn_count)
+        self.update_trace_sums_op = tf.group(*update_trace_sums)
+        self.reset_trace_sums_op = tf.group(*reset_trace_sums)
+        self.apply_trace_sums_op = opt.apply_gradients(zip([-ts / tf.cast(batch_turn_count, tf.float32) for ts in trace_sums], tvars))  # negative sign for gradient ascent
 
         xwin = tf.Variable(tf.constant(0.0), name='xwin', trainable=False)
         self.x_win_placeholder = tf.placeholder(tf.float32, shape=[], name='x_win_placeholder')
@@ -118,36 +121,46 @@ class NeuralNetworkAgent(object):
         self.update_o_win_op = tf.assign(owin, self.o_win_placeholder)
         tf.summary.scalar('o_win', owin)
 
-        self.summaries_op = tf.summary.merge_all()
-
         self.saver = tf.train.Saver(var_list=tvars, max_to_keep=1)
 
         self.sess.run(tf.global_variables_initializer())
+
+        for tvar in tvars:
+            for slot_name in opt.get_slot_names():
+                slot = opt.get_slot(tvar, slot_name)
+                tf.summary.histogram(tvar.name + '/' + slot_name, slot)
+
+        # TODO: break up summaries
+        self.summaries_op = tf.summary.merge_all()
 
         if restore:
             self.restore()
 
     def make_feature_vectors(self, boards, turn):
-        turn = tf.reshape(tf.cast(turn, tf.float32), [-1, 1])
-        turns = tf.tile(turn, [1, tf.shape(boards)[0]])
-        turns = tf.transpose(turns)
+        with tf.variable_scope('make_feature_vectors'):
+            turn = tf.reshape(tf.cast(turn, tf.float32), [-1, 1])
+            turns = tf.tile(turn, [1, tf.shape(boards)[0]])
+            turns = tf.transpose(turns)
 
-        reshaped_candidate_next_boards = tf.reshape(boards, [tf.shape(boards)[0], 27])
-        feature_vectors = tf.concat(1, [reshaped_candidate_next_boards, turns])
+            reshaped_candidate_next_boards = tf.reshape(boards, [tf.shape(boards)[0], 27])
+            feature_vectors = tf.concat(1, [reshaped_candidate_next_boards, turns])
 
-        return feature_vectors
+            return feature_vectors
 
-    def neural_net(self, feature_vector):
-        with tf.variable_scope("value_function") as scope:
+    def neural_network(self, feature_vector):
+
+        with tf.variable_scope("neural_network"):
             with tf.variable_scope('layer_1'):
                 W_1 = tf.get_variable('W_1', initializer=tf.truncated_normal([28, 100], stddev=0.1))
-                b_1 = tf.get_variable('b_1', initializer=tf.constant(0.0, shape=[100]))
+                b_1 = tf.get_variable('b_1', shape=[100], initializer=tf.constant_initializer(-0.1))
                 activation_1 = tf.nn.relu(tf.matmul(feature_vector, W_1) + b_1, name='activation_1')
+
             with tf.variable_scope('layer_2'):
                 W_2 = tf.get_variable('W_2', initializer=tf.truncated_normal([100, 1], stddev=0.1))
-                b_2 = tf.get_variable('b_2', initializer=tf.constant(0.0, shape=[1]))
-                value = tf.nn.tanh(tf.matmul(activation_1, W_2) + b_2, name='J')
-                return value
+                b_2 = tf.get_variable('b_2', shape=[1],  initializer=tf.constant_initializer(0.0))
+                value = tf.nn.tanh(tf.matmul(activation_1, W_2) + b_2, name='value')
+
+            return value
 
     def train(self, env, num_epochs, batch_size, epsilon, run_name=None, verbose=False):
         tf.train.write_graph(self.sess.graph_def, self.model_path, 'td_tictactoe.pb', as_text=False)
@@ -161,31 +174,45 @@ class NeuralNetworkAgent(object):
                 print('epoch', epoch)
             for episode in range(batch_size):
                 env.reset()
-                while env.reward() is None:
+                while env.get_reward() is None:
+                    # get legal moves
                     legal_moves = env.get_legal_moves()
-                    move_idx, _, _, _ = self.sess.run([self.next_board_idx, self.update_grad_traces_op, self.increment_turn_count_op, self.update_batch_loss_op],
+
+                    # find best move and update trace sum
+                    move_idx, _, _, _ = self.sess.run([self.next_board_idx,
+                                                       self.increment_turn_count_op,
+                                                       self.update_trace_sums_op,
+                                                       self.update_batch_loss_op],
                                                       feed_dict={self.turn_placeholder: env.turn,
                                                                  self.board_placeholder: [env.board],
                                                                  self.next_boards_placeholder: env.get_candidate_boards(),
                                                                  self.reward_placeholder: 0.0})
+
                     move = legal_moves[move_idx]
 
+                    # with probability epsilon:
+                    # 1. ignore best move
+                    # 2. make random move
+                    # 3. reset traces
                     if np.random.rand() < epsilon:
                         move = choice(legal_moves)
-                        self.sess.run(self.update_grad_trace_sums_op)
-                        self.sess.run(self.reset_grad_traces_op)
+                        self.sess.run(self.reset_traces_op)
 
+                    # push the move onto the environment
                     env.make_move(move)
 
-                self.sess.run([self.update_grad_traces_op, self.update_batch_loss_op],
-                              feed_dict={self.turn_placeholder: int(env.turn),
+                # update traces with final state and reward
+                self.sess.run([self.update_trace_sums_op,
+                               self.update_batch_loss_op],
+                              feed_dict={self.turn_placeholder: env.turn,
                                          self.board_placeholder: [env.board],
                                          self.next_boards_placeholder: np.zeros((0, 3, 3, 3)),
-                                         self.reward_placeholder: env.reward()})
-                self.sess.run([self.update_grad_trace_sums_op])
-                self.sess.run([self.reset_grad_traces_op, self.reset_game_turn_count_op])
+                                         self.reward_placeholder: env.get_reward()})
 
-            self.sess.run(self.apply_grad_trace_sums_op)
+                self.sess.run([self.reset_traces_op, self.reset_game_turn_count_op])
+                env.reset()
+
+            self.sess.run(self.apply_trace_sums_op)
 
             if verbose:
                 print('mean_step_loss:', self.sess.run(self.mean_step_loss))
@@ -194,11 +221,12 @@ class NeuralNetworkAgent(object):
 
             self.saver.save(self.sess, self.checkpoint_path + 'checkpoint.ckpt')
             summary = self.sess.run(self.summaries_op, feed_dict={self.batch_size_placeholder: batch_size})
-            summary_writer.add_summary(summary, epoch)
+            summary_writer.add_summary(summary, (epoch+1)*batch_size)
 
             self.sess.run([self.reset_batch_loss_op,
-                           self.reset_grad_trace_sums_op,
-                           self.reset_batch_turn_count_op])
+                           self.reset_batch_turn_count_op,
+                           self.reset_traces_op,
+                           self.reset_trace_sums_op])
 
         summary_writer.close()
 
