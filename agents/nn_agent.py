@@ -25,9 +25,9 @@ class NeuralNetworkAgent(object):
             self.reset_game_turn_count_op = game_turn_count.assign(0)
             self.reset_batch_turn_count_op = batch_turn_count.assign(0)
             self.reset_global_turn_count_op = global_turn_count.assign(0)
-            self.mean_turn_count_per_game = tf.cast(batch_turn_count, tf.float32)/self.batch_size_placeholder
+            # self.mean_turn_count_per_game = tf.cast(batch_turn_count, tf.float32)/self.batch_size_placeholder
 
-        tf.summary.scalar('mean_turn_count_per_game', self.mean_turn_count_per_game)
+        # tf.summary.scalar('mean_turn_count_per_game', self.mean_turn_count_per_game)
 
         self.turn_placeholder = tf.placeholder(tf.bool, shape=[], name='turn')
         self.board_placeholder = tf.placeholder(tf.float32, shape=[1, 3, 3, 3], name='board_placeholder')
@@ -52,13 +52,6 @@ class NeuralNetworkAgent(object):
         delta = tf.sub(target_value, value, name='delta')
         loss = tf.reduce_sum(tf.square(delta, name='loss'))
 
-        self.batch_loss = tf.Variable(0.0, trainable=False, name='batch_loss')
-        self.mean_step_loss = self.batch_loss / tf.maximum(1.0, tf.cast(batch_turn_count, tf.float32))
-        self.update_batch_loss_op = self.batch_loss.assign_add(loss)
-        self.reset_batch_loss_op = self.batch_loss.assign(0.0)
-
-        tf.summary.scalar('mean_step_loss', self.mean_step_loss)
-
         tvars = tf.trainable_variables()
         opt = tf.train.AdamOptimizer()
         grads_and_vars = opt.compute_gradients(value, var_list=tvars)
@@ -69,10 +62,6 @@ class NeuralNetworkAgent(object):
         traces = []
         update_traces = []
         reset_traces = []
-
-        trace_sums = []
-        update_trace_sums = []
-        reset_trace_sums = []
 
         with tf.variable_scope('update_traces'):
             for grad, var in grads_and_vars:
@@ -88,28 +77,35 @@ class NeuralNetworkAgent(object):
                     reset_trace_op = trace.assign(tf.zeros_like(trace))
                     reset_traces.append(reset_trace_op)
 
-                    delta_trace = tf.reduce_sum(delta) * trace
-
-                    trace_sum = tf.Variable(tf.zeros(var.get_shape()), trainable=False, name='trace_sum')
-                    trace_sums.append(trace_sum)
-
-                    with tf.control_dependencies([update_trace_op]):
-                        update_trace_sum_op = trace_sum.assign_add(delta_trace)
-                    update_trace_sums.append(update_trace_sum_op)
-
-                    reset_trace_sum_op = trace_sum.assign(tf.zeros_like(trace_sum))
-                    reset_trace_sums.append(reset_trace_sum_op)
-
-        for tvar, trace_sum in zip(tvars, trace_sums):
+        for tvar, trace in zip(tvars, traces):
             tf.summary.histogram(tvar.name, tvar)
-            tf.summary.histogram(tvar.name + '/trace_sum', trace_sum)
+            # tf.summary.histogram(tvar.name + '/delta_trace', tf.reduce_sum(delta) * trace)
 
         self.update_traces_op = tf.group(*update_traces)
         self.reset_traces_op = tf.group(*reset_traces)
 
-        self.update_trace_sums_op = tf.group(*update_trace_sums)
-        self.reset_trace_sums_op = tf.group(*reset_trace_sums)
-        self.apply_trace_sums_op = opt.apply_gradients(zip([-ts / tf.cast(batch_turn_count, tf.float32) for ts in trace_sums], tvars))  # negative sign for gradient ascent
+        self.average_loss = tf.Variable(0.0, trainable=False)
+        loss_ema = tf.train.ExponentialMovingAverage(decay=0.999)
+        average_loss_update_op = tf.group(loss_ema.apply([loss]),
+                                          self.average_loss.assign(loss_ema.average(loss)))
+        tf.summary.scalar('average_loss', self.average_loss)
+
+        average_turn_count_per_game = tf.Variable(0.0, trainable=False)
+        turn_count_ema = tf.train.ExponentialMovingAverage(decay=0.999)
+        game_turn_count_m1 = tf.cast(game_turn_count, tf.float32) - 1.0
+
+        # TODO: control dependencies
+        self.average_turn_count_per_game_update_op = tf.group(turn_count_ema.apply([game_turn_count_m1]),
+                                                              average_turn_count_per_game.assign(turn_count_ema.average(game_turn_count_m1)))
+        tf.summary.scalar('average_turn_count_per_game', average_turn_count_per_game)
+
+        with tf.control_dependencies([self.increment_turn_count_op,
+                                      self.update_traces_op,
+                                      average_loss_update_op]):
+            # negative sign for gradient ascent
+            self.train_op = opt.apply_gradients(zip([-tf.reduce_sum(delta) * trace / tf.cast(batch_turn_count, tf.float32)
+                                                     for trace in traces],
+                                                    tvars))
 
         xwin = tf.Variable(tf.constant(0.0), name='xwin', trainable=False)
         self.x_win_placeholder = tf.placeholder(tf.float32, shape=[], name='x_win_placeholder')
@@ -162,7 +158,7 @@ class NeuralNetworkAgent(object):
 
             return value
 
-    def train(self, env, num_epochs, batch_size, epsilon, run_name=None, verbose=False):
+    def train(self, env, num_epochs, batch_size, epsilon, run_name=None, verbose=False, summary_interval = 100):
         tf.train.write_graph(self.sess.graph_def, self.model_path, 'td_tictactoe.pb', as_text=False)
         if run_name is None:
             summary_writer = tf.summary.FileWriter('{0}{1}'.format(self.summary_path, int(time.time())), graph=self.sess.graph)
@@ -170,8 +166,9 @@ class NeuralNetworkAgent(object):
             summary_writer = tf.summary.FileWriter('{0}{1}'.format(self.summary_path, run_name), graph=self.sess.graph)
 
         for epoch in range(num_epochs):
-            if verbose:
-                print('epoch', epoch)
+            if epoch > 0 and epoch % summary_interval == 0:
+                if verbose:
+                    print('epoch', epoch)
             for episode in range(batch_size):
                 env.reset()
                 while env.get_reward() is None:
@@ -179,14 +176,12 @@ class NeuralNetworkAgent(object):
                     legal_moves = env.get_legal_moves()
 
                     # find best move and update trace sum
-                    move_idx, _, _, _ = self.sess.run([self.next_board_idx,
-                                                       self.increment_turn_count_op,
-                                                       self.update_trace_sums_op,
-                                                       self.update_batch_loss_op],
-                                                      feed_dict={self.turn_placeholder: env.turn,
-                                                                 self.board_placeholder: [env.board],
-                                                                 self.next_boards_placeholder: env.get_candidate_boards(),
-                                                                 self.reward_placeholder: 0.0})
+                    move_idx, _ = self.sess.run([self.next_board_idx,
+                                                 self.train_op],
+                                                feed_dict={self.turn_placeholder: env.turn,
+                                                           self.board_placeholder: [env.board],
+                                                           self.next_boards_placeholder: env.get_candidate_boards(),
+                                                           self.reward_placeholder: 0.0})
 
                     move = legal_moves[move_idx]
 
@@ -202,8 +197,8 @@ class NeuralNetworkAgent(object):
                     env.make_move(move)
 
                 # update traces with final state and reward
-                self.sess.run([self.update_trace_sums_op,
-                               self.update_batch_loss_op],
+                self.sess.run([self.train_op,
+                               self.average_turn_count_per_game_update_op],
                               feed_dict={self.turn_placeholder: env.turn,
                                          self.board_placeholder: [env.board],
                                          self.next_boards_placeholder: np.zeros((0, 3, 3, 3)),
@@ -212,21 +207,17 @@ class NeuralNetworkAgent(object):
                 self.sess.run([self.reset_traces_op, self.reset_game_turn_count_op])
                 env.reset()
 
-            self.sess.run(self.apply_trace_sums_op)
+            if epoch > 0 and epoch % summary_interval == 0:
+                if verbose:
+                    print('loss_ema:', self.sess.run(self.average_loss))
 
-            if verbose:
-                print('mean_step_loss:', self.sess.run(self.mean_step_loss))
+                self.test(env)
 
-            self.test(env)
+                self.saver.save(self.sess, self.checkpoint_path + 'checkpoint.ckpt')
+                summary = self.sess.run(self.summaries_op, feed_dict={self.batch_size_placeholder: batch_size})
+                summary_writer.add_summary(summary, (epoch+1)*batch_size)
 
-            self.saver.save(self.sess, self.checkpoint_path + 'checkpoint.ckpt')
-            summary = self.sess.run(self.summaries_op, feed_dict={self.batch_size_placeholder: batch_size})
-            summary_writer.add_summary(summary, (epoch+1)*batch_size)
-
-            self.sess.run([self.reset_batch_loss_op,
-                           self.reset_batch_turn_count_op,
-                           self.reset_traces_op,
-                           self.reset_trace_sums_op])
+            self.sess.run([self.reset_traces_op, self.reset_batch_turn_count_op])
 
         summary_writer.close()
 
