@@ -94,18 +94,16 @@ class NeuralNetworkAgent(object):
         turn_count_ema = tf.train.ExponentialMovingAverage(decay=0.999)
         game_turn_count_m1 = tf.cast(game_turn_count, tf.float32) - 1.0
 
-        # TODO: control dependencies
-        self.average_turn_count_per_game_update_op = tf.group(turn_count_ema.apply([game_turn_count_m1]),
-                                                              average_turn_count_per_game.assign(turn_count_ema.average(game_turn_count_m1)))
+        with tf.control_dependencies([turn_count_ema.apply([game_turn_count_m1])]):
+            self.average_turn_count_per_game_update_op = average_turn_count_per_game.assign(turn_count_ema.average(game_turn_count_m1))
         tf.summary.scalar('average_turn_count_per_game', average_turn_count_per_game)
 
         with tf.control_dependencies([self.increment_turn_count_op,
                                       self.update_traces_op,
                                       average_loss_update_op]):
             # negative sign for gradient ascent
-            self.train_op = opt.apply_gradients(zip([-tf.reduce_sum(delta) * trace / tf.cast(batch_turn_count, tf.float32)
-                                                     for trace in traces],
-                                                    tvars))
+            grads = [-tf.reduce_sum(delta) * trace / tf.cast(batch_turn_count, tf.float32) for trace in traces]
+            self.train_op = opt.apply_gradients(zip(grads, tvars))
 
         xwin = tf.Variable(tf.constant(0.0), name='xwin', trainable=False)
         self.x_win_placeholder = tf.placeholder(tf.float32, shape=[], name='x_win_placeholder')
