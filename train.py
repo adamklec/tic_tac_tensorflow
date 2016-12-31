@@ -8,7 +8,7 @@ def main():
     with tf.Session() as sess:
         nn_agent = NeuralNetworkAgent(sess,
                                       '/Users/adam/Documents/projects/td_learning/tic_tac_toe/model/',
-                                      '/Users/adam/Documents/projects/td_learning/tic_tac_toe/log2/',
+                                      '/Users/adam/Documents/projects/td_learning/tic_tac_toe/log/',
                                       '/Users/adam/Documents/projects/td_learning/tic_tac_toe/checkpoints/')
         env = TicTacToe()
         nn_agent.train(env, 1000000, 1, 0.1, verbose=True, summary_interval=100)
