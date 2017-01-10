@@ -2,7 +2,7 @@ import tensorflow as tf
 from agents.human_agent import HumanAgent
 from agents.random_agent import RandomAgent
 from agents.nn_agent import NeuralNetworkAgent
-from tic_tac_toe.game import TicTacToe
+from tic_tac_toe.tic_tac_toe import TicTacToe
 
 
 def main():

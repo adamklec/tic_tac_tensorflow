@@ -1,7 +1,7 @@
 import tensorflow as tf
 
 from agents.nn_agent import NeuralNetworkAgent
-from tic_tac_toe.game import TicTacToe
+from tic_tac_toe import TicTacToe
 
 
 def main():
