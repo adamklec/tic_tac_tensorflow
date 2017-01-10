@@ -1,8 +1,11 @@
 class HumanAgent(object):
     def get_move(self, env):
         while True:
-            move = int(input("Enter your move [1-9]")) - 1
-            if move in env.get_legal_moves():
-                return move
-            else:
+            legal_moves = env.get_legal_moves()
+            move = input("Enter your move:")
+            try:
+                move = int(move) - 1
+                if move in legal_moves:
+                    return move
+            except ValueError:
                 print("Illegal move")

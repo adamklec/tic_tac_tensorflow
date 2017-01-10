@@ -7,11 +7,9 @@ from random import choice
 
 
 class NeuralNetworkAgent(object):
-    def __init__(self, sess, model_path, summary_path, checkpoint_path, restore=False):
+    def __init__(self, sess, checkpoint=None, restore=False):
         self.sess = sess
-        self.model_path = model_path
-        self.checkpoint_path = checkpoint_path
-        self.summary_path = summary_path
+        self.checkpoint = checkpoint
 
         self.batch_size_placeholder = tf.placeholder(tf.float32, shape=[], name='batch_size_placeholder')
 
@@ -126,12 +124,12 @@ class NeuralNetworkAgent(object):
 
             for slot_name in opt.get_slot_names():
                 slot = opt.get_slot(tvar, slot_name)
-                tf.summary.histogram(tvar.name + '/' + slot_name, slot)
+                tf.summary.histogram('{}/{}'.format(tvar.name, slot_name), slot)
 
         self.summaries_op = tf.summary.merge_all()
 
         if restore:
-            self.restore()
+            self.restore(self.checkpoint)
 
     def make_feature_vectors(self, boards, turn):
         with tf.variable_scope('make_feature_vectors'):
@@ -159,60 +157,61 @@ class NeuralNetworkAgent(object):
 
             return value
 
-    def train(self, env, num_epochs, batch_size, epsilon, run_name=None, verbose=False, summary_interval=100):
-        tf.train.write_graph(self.sess.graph_def, self.model_path, 'td_tictactoe.pb', as_text=False)
+
+    # TODO: fix batches
+    def train(self, env, num_epochs, batch_size, epsilon, run_name=None, verbose=False):
+        tf.train.write_graph(self.sess.graph_def, './model/', 'td_tictactoe.pb', as_text=False)
         if run_name is None:
-            summary_writer = tf.summary.FileWriter('{0}{1}'.format(self.summary_path, int(time.time())), graph=self.sess.graph)
+            summary_writer = tf.summary.FileWriter('{0}{1}'.format('./log/', int(time.time())), graph=self.sess.graph)
         else:
-            summary_writer = tf.summary.FileWriter('{0}{1}'.format(self.summary_path, run_name), graph=self.sess.graph)
+            summary_writer = tf.summary.FileWriter('{0}{1}'.format('./log/', run_name), graph=self.sess.graph)
 
         for epoch in range(num_epochs):
-            if epoch > 0 and epoch % summary_interval == 0:
+            if epoch > 0 and epoch % batch_size == 0:
                 if verbose:
                     print('epoch', epoch)
-            for episode in range(batch_size):
-                # reset environment
-                self.sess.run([self.reset_traces_op, self.reset_game_turn_count_op])
-                env.reset()
+            # reset environment
+            self.sess.run([self.reset_traces_op, self.reset_game_turn_count_op])
+            env.reset()
 
-                while env.get_reward() is None:
-                    # get legal moves
-                    legal_moves = env.get_legal_moves()
+            while env.get_reward() is None:
+                # get legal moves
+                legal_moves = env.get_legal_moves()
 
-                    # find best move and update trace sum
-                    move_idx, _ = self.sess.run([self.next_board_idx,
-                                                 self.train_op],
-                                                feed_dict={self.turn_placeholder: env.turn,
-                                                           self.board_placeholder: [env.board],
-                                                           self.next_boards_placeholder: env.get_candidate_boards(),
-                                                           self.reward_placeholder: 0.0})
+                # find best move and update trace sum
+                move_idx, _ = self.sess.run([self.next_board_idx,
+                                             self.train_op],
+                                            feed_dict={self.turn_placeholder: env.turn,
+                                                       self.board_placeholder: [env.board],
+                                                       self.next_boards_placeholder: env.get_candidate_boards(),
+                                                       self.reward_placeholder: 0.0})
 
-                    move = legal_moves[move_idx]
+                move = legal_moves[move_idx]
 
-                    # with probability epsilon
-                    # make random move and reset traces
-                    if np.random.rand() < epsilon:
-                        move = choice(legal_moves)
-                        self.sess.run(self.reset_traces_op)
+                # with probability epsilon
+                # make random move and reset traces
+                if np.random.rand() < epsilon:
+                    move = choice(legal_moves)
+                    self.sess.run(self.reset_traces_op)
 
-                    # push the move onto the environment
-                    env.make_move(move)
+                # push the move onto the environment
+                env.make_move(move)
 
-                # update traces with final state and reward
-                self.sess.run([self.train_op,
-                               self.average_turn_count_per_game_update_op],
-                              feed_dict={self.turn_placeholder: env.turn,
-                                         self.board_placeholder: [env.board],
-                                         self.next_boards_placeholder: np.zeros((0, 3, 3, 3)),
-                                         self.reward_placeholder: env.get_reward()})
+            # update traces with final state and reward
+            self.sess.run([self.train_op,
+                           self.average_turn_count_per_game_update_op],
+                          feed_dict={self.turn_placeholder: env.turn,
+                                     self.board_placeholder: [env.board],
+                                     self.next_boards_placeholder: np.zeros((0, 3, 3, 3)),
+                                     self.reward_placeholder: env.get_reward()})
 
-            if epoch > 0 and epoch % summary_interval == 0:
+            if epoch > 0 and epoch % batch_size == 0:
                 if verbose:
                     print('loss_ema:', self.sess.run(self.average_loss))
 
                 self.test(env)
 
-                self.saver.save(self.sess, self.checkpoint_path + 'checkpoint.ckpt')
+                self.saver.save(self.sess, './checkpoints/checkpoint.ckpt')
                 summary = self.sess.run(self.summaries_op,
                                         feed_dict={self.batch_size_placeholder: batch_size})
                 summary_writer.add_summary(summary, (epoch+1)*batch_size)
@@ -221,12 +220,12 @@ class NeuralNetworkAgent(object):
 
         summary_writer.close()
 
-    def restore(self):
-        latest_checkpoint_path = tf.train.latest_checkpoint(self.checkpoint_path)
+    def restore(self, checkpoint=None):
+        if checkpoint is None:
+            checkpoint = tf.train.latest_checkpoint('./checkpoints')
 
-        if latest_checkpoint_path:
-            print('Restoring checkpoint: {0}'.format(latest_checkpoint_path))
-            self.saver.restore(self.sess, latest_checkpoint_path)
+        print('Restoring checkpoint: {0}'.format(checkpoint))
+        self.saver.restore(self.sess, checkpoint)
 
     def test(self, env):
         random_agent = RandomAgent()
