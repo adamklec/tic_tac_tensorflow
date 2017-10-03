@@ -24,6 +24,13 @@ class TicTacToeEnv(GameEnvBase):
                 move = choice(legal_moves)
                 self.make_move(move)
 
+    # def random_position(self):
+    #     self.reset()
+    #     move = np.random.randint(0, 18)
+    #     legal_moves = self.get_legal_moves()
+    #     if move in legal_moves:  # use starting position for moves greater than 8
+    #         self.make_move(move)
+
     def get_reward(self, board=None):
         if board is None:
             board = self.board

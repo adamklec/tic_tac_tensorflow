@@ -1,6 +1,8 @@
 import tensorflow as tf
 
 from agents.backward_view_agent import BackwardViewAgent
+from agents.forward_view_agent import ForwardViewAgent
+
 from envs.tic_tac_toe import TicTacToeEnv
 from value_model import ValueModel
 import time
@@ -9,8 +11,12 @@ import time
 def main():
     model = ValueModel()
     env = TicTacToeEnv()
-    nn_agent = BackwardViewAgent('agent_0', model, env)
-    log_dir = "/Users/adam/Documents/projects/td_tic_tac_toe/log/" + str(int(time.time()))
+    # nn_agent = BackwardViewAgent('agent_0', model, env)
+    nn_agent = ForwardViewAgent('agent_0', model, env)
+
+    # log_dir = "/Users/adam/Documents/projects/td_tic_tac_toe/log/" + str(int(time.time()))
+    log_dir = "/Users/adam/Documents/projects/td_tic_tac_toe/log/forward"
+
     summary_op = tf.summary.merge_all()
     scaffold = tf.train.Scaffold(summary_op=summary_op)
     increment_global_step = tf.assign_add(nn_agent.global_episode_count, 1)

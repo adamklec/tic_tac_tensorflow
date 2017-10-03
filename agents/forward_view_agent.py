@@ -3,7 +3,7 @@ import numpy as np
 from agents.agent_base import AgentBase
 
 
-class BackwardViewAgent(AgentBase):
+class ForwardViewAgent(AgentBase):
     def __init__(self,
                  name,
                  model,
@@ -37,42 +37,40 @@ class BackwardViewAgent(AgentBase):
 
         self.env.random_position()
 
-        traces = [np.zeros(tvar.shape)
-                  for tvar in self.model.trainable_variables]
-        grad_accums = [np.zeros(tvar.shape)
-                       for tvar in self.model.trainable_variables]
-        turn_count = 0
-        previous_grads = None
-        previous_value = None
+        grads_seq = []
+        value_seq = []
         while self.env.get_reward() is None:
 
             move, value = self.get_move(self.env, return_value=True)
+            value_seq.append(value)
+
             if np.random.random() < epsilon:
                 move = np.random.choice(self.env.get_legal_moves())
             self.env.make_move(move)
 
             feature_vector = self.env.make_feature_vector(self.env.board)
             grads = self.sess.run(self.grads, feed_dict={self.model.feature_vector_: feature_vector})
+            grads_seq.append(grads)
 
-            if turn_count > 0:
-                delta = (value - previous_value)
-                for previous_grad, trace, grad_accum in zip(previous_grads, traces, grad_accums):
-                    trace *= lamda
-                    trace += previous_grad
-                    grad_accum -= delta * trace
+        value_seq.append(self.env.get_reward())
 
-            previous_grads = grads
-            previous_value = value
-            turn_count += 1
+        delta_seq = [j - i for i, j in zip(value_seq[:-1], value_seq[1:])]
+        updates = [np.zeros(tvar.get_shape()) for tvar in self.model.trainable_variables]
+        for t, grads in enumerate(grads_seq):
+            for grad, update in zip(grads, updates):
+                inner_sum = 0.0
+                for j, delta in enumerate(delta_seq[t:]):
+                    inner_sum += (lamda ** j) * delta
+                update -= grad * inner_sum
 
         self.sess.run(self.apply_grads,
-                      feed_dict={grad_: grad_accum
-                                 for grad_, grad_accum in zip(self.grads_s, grad_accums)})
+                      feed_dict={grad_: update
+                                 for grad_, update in zip(self.grads_s, updates)})
 
         self.sess.run([self.update_layer_1_grad_accum_norm,
                        self.update_layer_2_grad_accum_norm],
-                      feed_dict={self.layer_1_grad_accum_norm_: np.linalg.norm(grad_accums[0]),
-                                 self.layer_2_grad_accum_norm_: np.linalg.norm(grad_accums[1])
+                      feed_dict={self.layer_1_grad_accum_norm_: np.linalg.norm(updates[0]),
+                                 self.layer_2_grad_accum_norm_: np.linalg.norm(updates[1])
                                  }
                       )
 
