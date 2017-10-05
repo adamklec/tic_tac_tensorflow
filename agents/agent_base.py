@@ -5,7 +5,6 @@ import tensorflow as tf
 class AgentBase(metaclass=ABCMeta):
 
     def __init__(self, name, model, env, verbose=False):
-
         self.name = name
         self.model = model
         assign_tvar_ops = []
@@ -16,7 +15,9 @@ class AgentBase(metaclass=ABCMeta):
         self.env = env
         self.verbose = verbose
         self.sess = None
-        self.global_episode_count = tf.train.get_or_create_global_step()
+
+        self.global_step_count = tf.train.get_or_create_global_step()
+        self.increment_global_step_count = tf.assign_add(self.global_step_count, 1)
 
     @abstractmethod
     def get_move(self, env):

@@ -18,61 +18,63 @@ class BackwardViewAgent(AgentBase):
         self.grads_s = [tf.placeholder(tf.float32, shape=tvar.get_shape()) for tvar in self.model.trainable_variables]
         self.apply_grads = self.opt.apply_gradients(zip(self.grads_s, self.model.trainable_variables),
                                                     name='apply_grads',
-                                                    global_step=self.global_episode_count)
+                                                    global_step=self.global_step_count)
 
-        layer_1_grad_accum_norm = tf.Variable(0.0, trainable=False, name='layer_1_grad_accum_norm')
-        self.layer_1_grad_accum_norm_ = tf.placeholder(tf.float32, name='layer_1_grad_accum_norm_')
-        self.update_layer_1_grad_accum_norm = tf.assign(layer_1_grad_accum_norm, self.layer_1_grad_accum_norm_)
-        tf.summary.scalar("layer_1_grad_accum_norm", layer_1_grad_accum_norm)
+        layer_1_grad_norm = tf.Variable(0.0, trainable=False, name='layer_1_grad_norm')
+        self.layer_1_grad_norm_ = tf.placeholder(tf.float32, name='layer_1_grad_norm_')
+        self.update_layer_1_grad_norm = tf.assign(layer_1_grad_norm, self.layer_1_grad_norm_)
+        tf.summary.scalar("layer_1_grad_norm", layer_1_grad_norm)
 
 
-        layer_2_grad_accum_norm = tf.Variable(0.0, trainable=False, name='layer_2_grad_accum_norm')
-        self.layer_2_grad_accum_norm_ = tf.placeholder(tf.float32, name='layer_2_grad_accum_norm_')
-        self.update_layer_2_grad_accum_norm = tf.assign(layer_2_grad_accum_norm, self.layer_2_grad_accum_norm_)
-        tf.summary.scalar("layer_2_grad_accum_norm", layer_2_grad_accum_norm)
+        layer_2_grad_norm = tf.Variable(0.0, trainable=False, name='layer_2_grad_norm')
+        self.layer_2_grad_norm_ = tf.placeholder(tf.float32, name='layer_2_grad_norm_')
+        self.update_layer_2_grad_norm = tf.assign(layer_2_grad_norm, self.layer_2_grad_norm_)
+        tf.summary.scalar("layer_2_grad_norm", layer_2_grad_norm)
 
     def train(self, epsilon):
-
         lamda = 0.7
 
         self.env.random_position()
 
         traces = [np.zeros(tvar.shape)
                   for tvar in self.model.trainable_variables]
-        grad_accums = [np.zeros(tvar.shape)
-                       for tvar in self.model.trainable_variables]
-        turn_count = 0
-        previous_grads = None
-        previous_value = None
-        while self.env.get_reward() is None:
 
-            move, value = self.get_move(self.env, return_value=True)
+        feature_vector = self.env.make_feature_vector(self.env.board)
+        previous_value, previous_grads = self.sess.run([self.model.value, self.grads],
+                                                       feed_dict={self.model.feature_vector_: feature_vector})
+        reward = self.env.get_reward()
+        while reward is None:
+            move = self.get_move(self.env)
             if np.random.random() < epsilon:
                 move = np.random.choice(self.env.get_legal_moves())
             self.env.make_move(move)
+            reward = self.env.get_reward()
 
             feature_vector = self.env.make_feature_vector(self.env.board)
-            grads = self.sess.run(self.grads, feed_dict={self.model.feature_vector_: feature_vector})
 
-            if turn_count > 0:
-                delta = (value - previous_value)
-                for previous_grad, trace, grad_accum in zip(previous_grads, traces, grad_accums):
-                    trace *= lamda
-                    trace += previous_grad
-                    grad_accum -= delta * trace
+            if reward is None:
+                value, grads = self.sess.run([self.model.value, self.grads],
+                                             feed_dict={self.model.feature_vector_: feature_vector})
+            else:
+                value = reward
+                grads = self.sess.run(self.grads,
+                                      feed_dict={self.model.feature_vector_: feature_vector})
+            delta = value - previous_value
+            for previous_grad, trace in zip(previous_grads, traces):
+                trace *= lamda
+                trace += previous_grad
+
+            self.sess.run(self.apply_grads,
+                          feed_dict={grad_: -delta * trace
+                                     for grad_, trace in zip(self.grads_s, traces)})
 
             previous_grads = grads
             previous_value = value
-            turn_count += 1
 
-        self.sess.run(self.apply_grads,
-                      feed_dict={grad_: grad_accum
-                                 for grad_, grad_accum in zip(self.grads_s, grad_accums)})
-
-        self.sess.run([self.update_layer_1_grad_accum_norm,
-                       self.update_layer_2_grad_accum_norm],
-                      feed_dict={self.layer_1_grad_accum_norm_: np.linalg.norm(grad_accums[0]),
-                                 self.layer_2_grad_accum_norm_: np.linalg.norm(grad_accums[1])
+        self.sess.run([self.update_layer_1_grad_norm,
+                       self.update_layer_2_grad_norm],
+                      feed_dict={self.layer_1_grad_norm_: np.linalg.norm(traces[0]),
+                                 self.layer_2_grad_norm_: np.linalg.norm(traces[1])
                                  }
                       )
 

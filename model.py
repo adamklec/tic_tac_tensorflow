@@ -1,17 +1,15 @@
 import tensorflow as tf
-from envs.tic_tac_toe import TicTacToeEnv
 
 
 class ValueModel:
-    def __init__(self, hidden_dim=1000):
-        fv_size = TicTacToeEnv.get_feature_vector_size()
+    def __init__(self, input_dim, hidden_dim):
 
-        self.feature_vector_ = tf.placeholder(tf.float32, shape=[None, fv_size], name='feature_vector_')
+        self.feature_vector_ = tf.placeholder(tf.float32, shape=[None, input_dim], name='feature_vector_')
         self.keep_prob_ = tf.placeholder(tf.float32, name='keep_prob_')
 
         with tf.variable_scope('layer_1'):
             W_1 = tf.get_variable('W_1',
-                                  shape=[fv_size, hidden_dim],
+                                  shape=[input_dim, hidden_dim],
                                   initializer=tf.contrib.layers.xavier_initializer())
             hidden_1 = tf.nn.relu(tf.matmul(self.feature_vector_, W_1), name='hidden_1')
 
