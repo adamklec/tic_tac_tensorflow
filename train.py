@@ -26,6 +26,9 @@ def main():
             step_count = sess.run(agent.global_step_count)
             if step_count >= next_test_idx or step_count == 0:
                 results = env.random_agent_test(agent)
+                sess.run(agent.update_random_agent_test_results,
+                         feed_dict={random_agent_test_: result
+                                    for random_agent_test_, result in zip(agent.random_agent_test_s, results)})
                 next_test_idx = next_test_idx + 1000
                 sess.run(agent.increment_global_step_count)
                 print(step_count, ':', results)
