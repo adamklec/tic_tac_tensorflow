@@ -87,8 +87,6 @@ class ForwardViewAgent(AgentBase):
             move_idx = np.argmax(values)
         else:
             move_idx = np.argmin(values)
-        move = env.get_legal_moves()[move_idx]
-        if return_value:
-            return move, value
-        else:
-            return move
+        move = legal_moves[move_idx]
+
+        return move

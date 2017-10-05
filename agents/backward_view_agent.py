@@ -41,7 +41,7 @@ class BackwardViewAgent(AgentBase):
 
             move = self.get_move(self.env)
             if np.random.random() < epsilon:
-                move = np.random.choice(self.env.legal_moves)
+                move = np.random.choice(self.env.get_legal_moves())
             self.env.make_move(move)
 
             reward = self.env.get_reward()
@@ -94,8 +94,6 @@ class BackwardViewAgent(AgentBase):
             move_idx = np.argmax(values)
         else:
             move_idx = np.argmin(values)
-        move = env.get_legal_moves()[move_idx]
-        if return_value:
-            return move, value
-        else:
-            return move
+        move = legal_moves[move_idx]
+
+        return move
