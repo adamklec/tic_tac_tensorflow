@@ -9,6 +9,7 @@ class BackwardViewAgent(AgentBase):
                  model,
                  env,
                  verbose=False):
+
         super().__init__(name, model, env, verbose)
 
         self.opt = tf.train.AdamOptimizer()
@@ -16,27 +17,33 @@ class BackwardViewAgent(AgentBase):
         self.grads = tf.gradients(self.model.value, self.model.trainable_variables)
 
         self.grads_s = [tf.placeholder(tf.float32, shape=tvar.get_shape()) for tvar in self.model.trainable_variables]
+
         self.apply_grads = self.opt.apply_gradients(zip(self.grads_s, self.model.trainable_variables),
                                                     name='apply_grads',
                                                     global_step=self.global_step_count)
 
     def train(self, epsilon):
+
         lamda = 0.7
 
-        self.env.random_position()
+        self.env.reset()
 
         traces = [np.zeros(tvar.shape)
                   for tvar in self.model.trainable_variables]
 
         feature_vector = self.env.make_feature_vector(self.env.board)
+
         previous_value, previous_grads = self.sess.run([self.model.value, self.grads],
                                                        feed_dict={self.model.feature_vector_: feature_vector})
         reward = self.env.get_reward()
+
         while reward is None:
+
             move = self.get_move(self.env)
             if np.random.random() < epsilon:
-                move = np.random.choice(self.env.get_legal_moves())
+                move = np.random.choice(self.env.legal_moves)
             self.env.make_move(move)
+
             reward = self.env.get_reward()
 
             feature_vector = self.env.make_feature_vector(self.env.board)
@@ -48,6 +55,7 @@ class BackwardViewAgent(AgentBase):
                 value = reward
                 grads = self.sess.run(self.grads,
                                       feed_dict={self.model.feature_vector_: feature_vector})
+
             delta = value - previous_value
             for previous_grad, trace in zip(previous_grads, traces):
                 trace *= lamda
@@ -73,18 +81,18 @@ class BackwardViewAgent(AgentBase):
         feature_vectors = np.vstack(
             [self.env.make_feature_vector(board) for board in
              candidate_boards])
+
         values = self.sess.run(self.model.value,
                                feed_dict={self.model.feature_vector_: feature_vectors})
+
         for idx, board in enumerate(candidate_boards):
             result = board.result()
             if result is not None:
                 values[idx] = result
 
         if env.board.turn:
-            value = np.max(values)
             move_idx = np.argmax(values)
         else:
-            value = np.min(values)
             move_idx = np.argmin(values)
         move = env.get_legal_moves()[move_idx]
         if return_value:

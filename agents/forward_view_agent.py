@@ -9,6 +9,7 @@ class ForwardViewAgent(AgentBase):
                  model,
                  env,
                  verbose=False):
+
         super().__init__(name, model, env, verbose)
 
         self.opt = tf.train.AdamOptimizer()
@@ -16,6 +17,7 @@ class ForwardViewAgent(AgentBase):
         self.grads = tf.gradients(self.model.value, self.model.trainable_variables)
 
         self.grads_s = [tf.placeholder(tf.float32, shape=tvar.get_shape()) for tvar in self.model.trainable_variables]
+
         self.apply_grads = self.opt.apply_gradients(zip(self.grads_s, self.model.trainable_variables),
                                                     name='apply_grads',
                                                     global_step=self.global_step_count)
@@ -24,7 +26,7 @@ class ForwardViewAgent(AgentBase):
 
         lamda = 0.7
 
-        self.env.random_position()
+        self.env.reset()
 
         grads_seq = []
         value_seq = []
@@ -38,6 +40,7 @@ class ForwardViewAgent(AgentBase):
                 move = np.random.choice(self.env.get_legal_moves())
             self.env.make_move(move)
             turn_count += 1
+
             reward = self.env.get_reward()
 
             feature_vector = self.env.make_feature_vector(self.env.board)
@@ -48,6 +51,7 @@ class ForwardViewAgent(AgentBase):
 
         delta_seq = [j - i for i, j in zip(value_seq[:-1], value_seq[1:])]
         updates = [np.zeros(tvar.get_shape()) for tvar in self.model.trainable_variables]
+
         for t, grads in enumerate(grads_seq):
             for grad, update in zip(grads, updates):
                 inner_sum = 0.0
@@ -80,10 +84,8 @@ class ForwardViewAgent(AgentBase):
                 values[idx] = result
 
         if env.board.turn:
-            value = np.max(values)
             move_idx = np.argmax(values)
         else:
-            value = np.min(values)
             move_idx = np.argmin(values)
         move = env.get_legal_moves()[move_idx]
         if return_value:

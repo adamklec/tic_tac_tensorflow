@@ -9,10 +9,10 @@ def main():
     env = TicTacToeEnv()
     model = ValueModel(env.feature_vector_size, 1000)
 
-    # agent = BackwardViewAgent('agent_0', model, env)
-    agent = ForwardViewAgent('agent_0', model, env)
+    agent = BackwardViewAgent('agent_0', model, env)
+    # agent = ForwardViewAgent('agent_0', model, env)
 
-    log_dir = "./log/forward"
+    log_dir = "./log/backward"
 
     summary_op = tf.summary.merge_all()
     scaffold = tf.train.Scaffold(summary_op=summary_op)

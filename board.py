@@ -6,22 +6,14 @@ class TicTacToeBoard:
     def __init__(self):
         self.xs = np.zeros((3, 3))
         self.os = np.zeros((3, 3))
-        self._legal_moves = np.arange(9)
-        self._turn = True
+        self.legal_moves = set(range(9))
+        self.turn = True
         self.move_stack = []
-
-    @property
-    def turn(self):
-        return self._turn
-
-    @property
-    def legal_moves(self):
-        return self._legal_moves
 
     def push(self, move):
         row = int(move / 3)
         col = move % 3
-
+        assert move in self.legal_moves
         assert self.xs[row, col] == 0
         assert self.os[row, col] == 0
         if self.turn:
@@ -29,11 +21,8 @@ class TicTacToeBoard:
         else:
             self.os[row, col] = 1
         self.move_stack.append(3 * row + col)
-        self._turn = not self._turn
-        self._legal_moves = np.where((self.xs + self.os).reshape(9) == 0)[0]
-
-    def is_game_over(self):
-        return self.result() is not None
+        self.turn = not self.turn
+        self.legal_moves = self.legal_moves.remove(move)
 
     def result(self):
         if any(self.xs.sum(axis=0) == 3.0) or any(self.xs.sum(axis=1) == 3.0) or self.xs[np.eye(3) == 1.0].sum() == 3.0 or self.xs[np.rot90(np.eye(3)) == 1].sum() == 3.0:
