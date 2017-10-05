@@ -23,6 +23,8 @@ class AgentBase(metaclass=ABCMeta):
     def get_move(self, env):
         return NotImplemented
 
-    @abstractmethod
     def get_move_function(self):
-        return NotImplemented
+        def m(env):
+            move = self.get_move(env)
+            return move
+        return m

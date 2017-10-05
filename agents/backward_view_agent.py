@@ -109,9 +109,3 @@ class BackwardViewAgent(AgentBase):
             return move, value
         else:
             return move
-
-    def get_move_function(self):
-        def m(env):
-            move = self.get_move(env)
-            return move
-        return m
