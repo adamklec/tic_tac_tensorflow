@@ -20,17 +20,6 @@ class BackwardViewAgent(AgentBase):
                                                     name='apply_grads',
                                                     global_step=self.global_step_count)
 
-        layer_1_grad_norm = tf.Variable(0.0, trainable=False, name='layer_1_grad_norm')
-        self.layer_1_grad_norm_ = tf.placeholder(tf.float32, name='layer_1_grad_norm_')
-        self.update_layer_1_grad_norm = tf.assign(layer_1_grad_norm, self.layer_1_grad_norm_)
-        tf.summary.scalar("layer_1_grad_norm", layer_1_grad_norm)
-
-
-        layer_2_grad_norm = tf.Variable(0.0, trainable=False, name='layer_2_grad_norm')
-        self.layer_2_grad_norm_ = tf.placeholder(tf.float32, name='layer_2_grad_norm_')
-        self.update_layer_2_grad_norm = tf.assign(layer_2_grad_norm, self.layer_2_grad_norm_)
-        tf.summary.scalar("layer_2_grad_norm", layer_2_grad_norm)
-
     def train(self, epsilon):
         lamda = 0.7
 
@@ -70,13 +59,6 @@ class BackwardViewAgent(AgentBase):
 
             previous_grads = grads
             previous_value = value
-
-        self.sess.run([self.update_layer_1_grad_norm,
-                       self.update_layer_2_grad_norm],
-                      feed_dict={self.layer_1_grad_norm_: np.linalg.norm(traces[0]),
-                                 self.layer_2_grad_norm_: np.linalg.norm(traces[1])
-                                 }
-                      )
 
         return self.env.get_reward()
 

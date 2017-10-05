@@ -25,13 +25,12 @@ def main():
         while True:
             step_count = sess.run(agent.global_step_count)
             if step_count >= next_test_idx or step_count == 0:
-                results = env.random_agent_test(agent.get_move_function())
+                results = env.random_agent_test(agent)
                 next_test_idx = next_test_idx + 1000
                 sess.run(agent.increment_global_step_count)
                 print(step_count, ':', results)
             else:
                 agent.train(0.1)
-
 
 if __name__ == "__main__":
     main()

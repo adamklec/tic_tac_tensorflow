@@ -116,7 +116,7 @@ class TicTacToeEnv:
         while self.get_reward() is None:
             if verbose:
                 self._print()
-            player = players[int(self.board.turn)]
+            player = players[int(not self.board.turn)]
             move = player.get_move(self)
             self.make_move(move)
 
@@ -128,43 +128,28 @@ class TicTacToeEnv:
             elif reward == -1:
                 print("O won!")
             else:
-                print("draw")
-        return self.get_reward()
-
-    def play_random(self, get_move_function, side):
-
-        self.reset()
-        random_agent = RandomAgent()
-        if side:
-            move_functions = [random_agent.get_move, get_move_function]  # True == 1 == 'X'
-        else:
-            move_functions = [get_move_function, random_agent.get_move]
-
-        while self.get_reward() is None:
-            move_function = move_functions[int(self.board.turn)]
-            move = move_function(self)
-            self.make_move(move)
-
-        reward = self.get_reward()
-
+                print("draw.")
         return reward
 
-    def random_agent_test(self, get_move_function):
+    def random_agent_test(self, agent):
+        random_agent = RandomAgent()
+
         x_counter = Counter()
         for _ in range(100):
             self.reset()
-            reward = self.play_random(get_move_function, True)
+            reward = self.play([agent, random_agent])
             x_counter.update([reward])
 
         o_counter = Counter()
         for _ in range(100):
             self.reset()
-            reward = self.play_random(get_move_function, False)
+            reward = self.play([random_agent, agent])
             o_counter.update([reward])
 
         results = [x_counter[1], x_counter[0], x_counter[-1],
                    o_counter[-1], o_counter[0], o_counter[1]]
 
-        self.sess.run(self.update_random_agent_test_results, feed_dict={random_agent_test_: result
-                                                                        for random_agent_test_, result in zip(self.random_agent_test_s, results)})
+        self.sess.run(self.update_random_agent_test_results,
+                      feed_dict={random_agent_test_: result
+                                 for random_agent_test_, result in zip(self.random_agent_test_s, results)})
         return results

@@ -20,16 +20,6 @@ class ForwardViewAgent(AgentBase):
                                                     name='apply_grads',
                                                     global_step=self.global_step_count)
 
-        layer_1_grad_norm = tf.Variable(0.0, trainable=False, name='layer_1_grad_norm')
-        self.layer_1_grad_norm_ = tf.placeholder(tf.float32, name='layer_1_grad_norm_')
-        self.update_layer_1_grad_accum_norm = tf.assign(layer_1_grad_norm, self.layer_1_grad_norm_)
-        tf.summary.scalar("layer_1_grad_norm", layer_1_grad_norm)
-
-        layer_2_grad_norm = tf.Variable(0.0, trainable=False, name='layer_2_grad_norm')
-        self.layer_2_grad_norm_ = tf.placeholder(tf.float32, name='layer_2_grad_norm_')
-        self.update_layer_2_grad_accum_norm = tf.assign(layer_2_grad_norm, self.layer_2_grad_norm_)
-        tf.summary.scalar("layer_2_grad_norm", layer_2_grad_norm)
-
     def train(self, epsilon):
 
         lamda = 0.7
@@ -68,13 +58,6 @@ class ForwardViewAgent(AgentBase):
         self.sess.run(self.apply_grads,
                       feed_dict={grad_: update/turn_count
                                  for grad_, update in zip(self.grads_s, updates)})
-
-        self.sess.run([self.update_layer_1_grad_accum_norm,
-                       self.update_layer_2_grad_accum_norm],
-                      feed_dict={self.layer_1_grad_norm_: np.linalg.norm(updates[0]),
-                                 self.layer_2_grad_norm_: np.linalg.norm(updates[1])
-                                 }
-                      )
 
         return reward
 
