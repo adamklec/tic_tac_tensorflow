@@ -3,8 +3,11 @@ from collections import Counter
 
 
 class RandomAgent(object):
-    def get_move(self, env):
-        legal_moves = env.get_legal_moves()
+    def __init__(self, env):
+        self.env = env
+
+    def get_move(self):
+        legal_moves = self.env.get_legal_moves()
         move = random.choice(legal_moves)
         return move
 

@@ -6,15 +6,18 @@ class TicTacToeEnv:
     def __init__(self):
         self.board = TicTacToeBoard()
         self.feature_vector_size = 28
+        self.turn_count = 0
 
     def reset(self):
         self.board = TicTacToeBoard()
+        self.turn_count = 0
 
     def get_reward(self):
         return self.board.result()
 
     def make_move(self, move):
         self.board.push(move)
+        self.turn_count += 1
 
     def get_legal_moves(self):
         return list(self.board.legal_moves)
@@ -54,7 +57,7 @@ class TicTacToeEnv:
             if verbose:
                 self._print()
             player = players[int(not self.board.turn)]
-            move = player.get_move(self)
+            move = player.get_move()
             self.make_move(move)
             reward = self.get_reward()
 

@@ -1,23 +1,24 @@
-from abc import ABCMeta, abstractmethod
+from abc import ABCMeta
+import numpy as np
 import tensorflow as tf
 
 
 class AgentBase(metaclass=ABCMeta):
 
-    def __init__(self, name, model, env, verbose=False):
+    def __init__(self, name, model, env):
         self.name = name
         self.model = model
+        self.env = env
+        self.sess = None
+
+        self.global_step_count = tf.train.get_or_create_global_step()
+        self.increment_global_step_count = tf.assign_add(self.global_step_count, 1)
+
         assign_tvar_ops = []
         for tvar, local_tvar in zip(self.model.trainable_variables, self.model.trainable_variables):
             assign_tvar_op = tf.assign(local_tvar, tvar)
             assign_tvar_ops.append(assign_tvar_op)
             tf.summary.histogram(tvar.op.name, tvar)
-        self.env = env
-        self.verbose = verbose
-        self.sess = None
-
-        self.global_step_count = tf.train.get_or_create_global_step()
-        self.increment_global_step_count = tf.assign_add(self.global_step_count, 1)
 
         with tf.name_scope('random_agent_test_results'):
             self.x_wins_ = tf.placeholder(tf.int32, name='x_wins_')
@@ -67,9 +68,37 @@ class AgentBase(metaclass=ABCMeta):
             tf.summary.scalar("o_draws", self.o_draws)
             tf.summary.scalar("o_losses", self.o_losses)
 
-    @abstractmethod
-    def get_move(self, env):
-        return NotImplemented
+    def get_move(self, return_value=False):
+        legal_moves = self.env.get_legal_moves()
+        candidate_boards = []
+        for move in legal_moves:
+            candidate_board = self.env.board.copy()
+            candidate_board.push(move)
+            candidate_boards.append(candidate_board)
+
+        feature_vectors = np.vstack(
+            [self.env.make_feature_vector(board) for board in
+             candidate_boards])
+
+        values = self.sess.run(self.model.value,
+                               feed_dict={
+                                   self.model.feature_vector_: feature_vectors})
+
+        for idx, board in enumerate(candidate_boards):
+            result = board.result()
+            if result is not None:
+                values[idx] = result
+
+        if self.env.board.turn:
+            move_idx = np.argmax(values)
+        else:
+            move_idx = np.argmin(values)
+        move = legal_moves[move_idx]
+
+        if return_value:
+            return move, values[move_idx]
+        else:
+            return move
 
     def get_move_function(self):
         def m(env):

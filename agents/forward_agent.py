@@ -3,16 +3,18 @@ import numpy as np
 from agents.agent_base import AgentBase
 
 
-class ForwardViewAgent(AgentBase):
+class ForwardAgent(AgentBase):
     def __init__(self,
                  name,
                  model,
                  env,
                  verbose=False):
 
-        super().__init__(name, model, env, verbose)
+        super().__init__(name, model, env)
 
         self.opt = tf.train.AdamOptimizer()
+
+        self.verbose = verbose
 
         self.grads = tf.gradients(self.model.value, self.model.trainable_variables)
 
@@ -31,15 +33,13 @@ class ForwardViewAgent(AgentBase):
         grads_seq = []
         value_seq = []
         reward = self.env.get_reward()
-        turn_count = 0
         while reward is None:
-            move, value = self.get_move(self.env, return_value=True)
+            move, value = self.get_move(return_value=True)
             value_seq.append(value)
 
             if np.random.random() < epsilon:
                 move = np.random.choice(self.env.get_legal_moves())
             self.env.make_move(move)
-            turn_count += 1
 
             reward = self.env.get_reward()
 
@@ -60,33 +60,7 @@ class ForwardViewAgent(AgentBase):
                 update -= grad * inner_sum
 
         self.sess.run(self.apply_grads,
-                      feed_dict={grad_: update/turn_count
+                      feed_dict={grad_: update/self.env.turn_count
                                  for grad_, update in zip(self.grads_s, updates)})
 
         return reward
-
-    def get_move(self, env, return_value=False):
-        legal_moves = env.get_legal_moves()
-        candidate_boards = []
-        for move in legal_moves:
-            candidate_board = self.env.board.copy()
-            candidate_board.push(move)
-            candidate_boards.append(candidate_board)
-
-        feature_vectors = np.vstack(
-            [self.env.make_feature_vector(board) for board in
-             candidate_boards])
-        values = self.sess.run(self.model.value,
-                               feed_dict={self.model.feature_vector_: feature_vectors})
-        for idx, board in enumerate(candidate_boards):
-            result = board.result()
-            if result is not None:
-                values[idx] = result
-
-        if env.board.turn:
-            move_idx = np.argmax(values)
-        else:
-            move_idx = np.argmin(values)
-        move = legal_moves[move_idx]
-
-        return move

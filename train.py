@@ -1,6 +1,6 @@
 import tensorflow as tf
-from agents.backward_view_agent import BackwardViewAgent
-from agents.forward_view_agent import ForwardViewAgent
+from agents.backward_agent import BackwardAgent
+from agents.forward_agent import ForwardAgent
 from agents.random_agent import RandomAgent
 from env import TicTacToeEnv
 from model import ValueModel
@@ -10,11 +10,11 @@ def main():
     env = TicTacToeEnv()
     model = ValueModel(env.feature_vector_size, 100)
 
-    agent = BackwardViewAgent('agent_0', model, env)
+    agent = BackwardAgent('agent_0', model, env)
     # agent = ForwardViewAgent('agent_0', model, env)
-    random_agent = RandomAgent()
+    random_agent = RandomAgent(env)
 
-    log_dir = "./log/backward3"
+    log_dir = "./log/backward5"
 
     summary_op = tf.summary.merge_all()
     scaffold = tf.train.Scaffold(summary_op=summary_op)
