@@ -8,7 +8,7 @@ from model import ValueModel
 
 def main():
     env = TicTacToeEnv()
-    model = ValueModel(env.feature_vector_size, 1000)
+    model = ValueModel(env.feature_vector_size, 100)
 
     agent = BackwardViewAgent('agent_0', model, env)
     # agent = ForwardViewAgent('agent_0', model, env)
