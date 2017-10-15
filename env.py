@@ -1,6 +1,4 @@
 import numpy as np
-from collections import Counter
-from agents.random_agent import RandomAgent
 from board import TicTacToeBoard
 
 
@@ -69,23 +67,3 @@ class TicTacToeEnv:
             else:
                 print("draw.")
         return reward
-
-    def random_agent_test(self, agent):
-        random_agent = RandomAgent()
-
-        x_counter = Counter()
-        for _ in range(100):
-            self.reset()
-            reward = self.play([agent, random_agent])
-            x_counter.update([reward])
-
-        o_counter = Counter()
-        for _ in range(100):
-            self.reset()
-            reward = self.play([random_agent, agent])
-            o_counter.update([reward])
-
-        results = [x_counter[1], x_counter[0], x_counter[-1],
-                   o_counter[-1], o_counter[0], o_counter[1]]
-
-        return results

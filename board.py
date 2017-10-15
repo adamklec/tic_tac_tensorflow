@@ -8,7 +8,6 @@ class TicTacToeBoard:
         self.os = np.zeros((3, 3))
         self.legal_moves = set(range(9))
         self.turn = True
-        self.move_stack = []
 
     def push(self, move):
         row = int(move / 3)
@@ -18,7 +17,6 @@ class TicTacToeBoard:
 
         assert move in self.legal_moves
         self.legal_moves.remove(move)
-        self.move_stack.append(move)
 
         if self.turn:
             self.xs[row, col] = 1
