@@ -14,10 +14,7 @@ class AgentBase(metaclass=ABCMeta):
         self.global_step_count = tf.train.get_or_create_global_step()
         self.increment_global_step_count = tf.assign_add(self.global_step_count, 1)
 
-        assign_tvar_ops = []
-        for tvar, local_tvar in zip(self.model.trainable_variables, self.model.trainable_variables):
-            assign_tvar_op = tf.assign(local_tvar, tvar)
-            assign_tvar_ops.append(assign_tvar_op)
+        for tvar in self.model.trainable_variables:
             tf.summary.histogram(tvar.op.name, tvar)
 
         with tf.name_scope('random_agent_test_results'):
@@ -68,7 +65,7 @@ class AgentBase(metaclass=ABCMeta):
             tf.summary.scalar("o_draws", self.o_draws)
             tf.summary.scalar("o_losses", self.o_losses)
 
-    def get_move(self, return_value=False):
+    def get_move(self):
         legal_moves = self.env.get_legal_moves()
         candidate_boards = []
         for move in legal_moves:
@@ -95,13 +92,4 @@ class AgentBase(metaclass=ABCMeta):
             move_idx = np.argmin(values)
         move = legal_moves[move_idx]
 
-        if return_value:
-            return move, values[move_idx]
-        else:
-            return move
-
-    def get_move_function(self):
-        def m(env):
-            move = self.get_move(env)
-            return move
-        return m
+        return move

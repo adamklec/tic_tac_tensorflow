@@ -33,34 +33,32 @@ class ForwardAgent(AgentBase):
         grads_seq = []
         value_seq = []
         reward = self.env.get_reward()
+
         while reward is None:
-            move, value = self.get_move(return_value=True)
+            feature_vector = self.env.make_feature_vector(self.env.board)
+            value, grads = self.sess.run([self.model.value, self.grads],
+                                         feed_dict={self.model.feature_vector_: feature_vector})
             value_seq.append(value)
+            grads_seq.append(grads)
+
+            move = self.get_move()
 
             if np.random.random() < epsilon:
-                move = np.random.choice(self.env.get_legal_moves())
-            self.env.make_move(move)
+                self.env.make_random_move()
+            else:
+                self.env.make_move(move)
 
             reward = self.env.get_reward()
 
-            feature_vector = self.env.make_feature_vector(self.env.board)
-            grads = self.sess.run(self.grads, feed_dict={self.model.feature_vector_: feature_vector})
-            grads_seq.append(grads)
+        value_seq.append(np.array([reward]))
 
-        value_seq.append(reward)
-
-        delta_seq = [j - i for i, j in zip(value_seq[:-1], value_seq[1:])]
-        updates = [np.zeros(tvar.get_shape()) for tvar in self.model.trainable_variables]
+        delta_seq = np.array([j - i for i, j in zip(value_seq[:-1], value_seq[1:])])
+        delta_seq[:-1] = delta_seq[:-1] * (1.0 - lamda)
 
         for t, grads in enumerate(grads_seq):
-            for grad, update in zip(grads, updates):
-                inner_sum = 0.0
-                for j, delta in enumerate(delta_seq[t:]):
-                    inner_sum += (lamda ** j) * delta
-                update -= grad * inner_sum
-
-        self.sess.run(self.apply_grads,
-                      feed_dict={grad_: update/self.env.turn_count
-                                 for grad_, update in zip(self.grads_s, updates)})
+            delta_sum = np.sum([(lamda ** j) * delta for j, delta in enumerate(delta_seq[t:])])
+            self.sess.run(self.apply_grads,
+                          feed_dict={grad_: -grad * delta_sum
+                                     for grad_, grad in zip(self.grads_s, grads)})
 
         return reward

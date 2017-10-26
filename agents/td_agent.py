@@ -3,7 +3,7 @@ import numpy as np
 from agents.agent_base import AgentBase
 
 
-class BackwardAgent(AgentBase):
+class TDAgent(AgentBase):
     def __init__(self,
                  name,
                  model,
@@ -12,9 +12,9 @@ class BackwardAgent(AgentBase):
 
         super().__init__(name, model, env)
 
-        self.verbose = verbose
-
         self.opt = tf.train.AdamOptimizer()
+
+        self.verbose = verbose
 
         self.grads = tf.gradients(self.model.value, self.model.trainable_variables)
 
@@ -26,12 +26,7 @@ class BackwardAgent(AgentBase):
 
     def train(self, epsilon):
 
-        lamda = 0.7
-
         self.env.reset()
-
-        traces = [np.zeros(tvar.shape)
-                  for tvar in self.model.trainable_variables]
 
         feature_vector = self.env.make_feature_vector(self.env.board)
 
@@ -40,12 +35,13 @@ class BackwardAgent(AgentBase):
         reward = self.env.get_reward()
 
         while reward is None:
-            move = self.get_move()
 
             if np.random.random() < epsilon:
-                self.env.make_random_move()
+                move = np.random.choice(self.env.get_legal_moves())
             else:
-                self.env.make_move(move)
+                move = self.get_move()
+
+            self.env.make_move(move)
 
             reward = self.env.get_reward()
 
@@ -60,13 +56,9 @@ class BackwardAgent(AgentBase):
                                       feed_dict={self.model.feature_vector_: feature_vector})
 
             delta = value - previous_value
-            for previous_grad, trace in zip(previous_grads, traces):
-                trace *= lamda
-                trace += previous_grad
-
             self.sess.run(self.apply_grads,
-                          feed_dict={grad_: -delta * trace
-                                     for grad_, trace in zip(self.grads_s, traces)})
+                          feed_dict={grad_: -delta * previous_grad
+                                     for previous_grad, grad_ in zip(previous_grads, self.grads_s)})
 
             previous_grads = grads
             previous_value = value

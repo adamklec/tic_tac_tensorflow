@@ -1,23 +1,26 @@
 import numpy as np
 from board import TicTacToeBoard
+from random import choice
 
 
 class TicTacToeEnv:
     def __init__(self):
         self.board = TicTacToeBoard()
         self.feature_vector_size = 28
-        self.turn_count = 0
 
     def reset(self):
         self.board = TicTacToeBoard()
-        self.turn_count = 0
 
     def get_reward(self):
         return self.board.result()
 
     def make_move(self, move):
         self.board.push(move)
-        self.turn_count += 1
+
+    def make_random_move(self):
+        legal_moves = self.get_legal_moves()
+        move = choice(legal_moves)
+        self.make_move(move)
 
     def get_legal_moves(self):
         return list(self.board.legal_moves)
