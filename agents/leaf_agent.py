@@ -22,8 +22,7 @@ class LeafAgent(AgentBase):
         self.grads_s = [tf.placeholder(tf.float32, shape=tvar.get_shape()) for tvar in self.model.trainable_variables]
 
         self.apply_grads = self.opt.apply_gradients(zip(self.grads_s, self.model.trainable_variables),
-                                                    name='apply_grads',
-                                                    global_step=self.global_step_count)
+                                                    name='apply_grads')
 
     def train(self, epsilon):
 

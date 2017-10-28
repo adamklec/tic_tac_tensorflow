@@ -18,7 +18,7 @@ class SimpleAgent(AgentBase):
 
         self.value_ = tf.placeholder(tf.float32, name='value_')
         self.loss = tf.reduce_mean(tf.abs(self.value_ - self.model.value))
-        self.train_op = self.opt.minimize(self.loss, global_step=self.global_step_count)
+        self.train_op = self.opt.minimize(self.loss)
 
     def train(self, epsilon):
 
@@ -33,11 +33,10 @@ class SimpleAgent(AgentBase):
             feature_vectors.append(feature_vector)
 
             if np.random.random() < epsilon:
-                move = np.random.choice(self.env.get_legal_moves())
+                self.env.make_random_move()
             else:
                 move = self.get_move()
-
-            self.env.make_move(move)
+                self.env.make_move(move)
 
             reward = self.env.get_reward()
 

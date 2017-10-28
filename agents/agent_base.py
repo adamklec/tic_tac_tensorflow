@@ -11,8 +11,8 @@ class AgentBase(metaclass=ABCMeta):
         self.env = env
         self.sess = None
 
-        self.global_step_count = tf.train.get_or_create_global_step()
-        self.increment_global_step_count = tf.assign_add(self.global_step_count, 1)
+        self.episode_count = tf.train.get_or_create_global_step()
+        self.increment_episode_count = tf.assign_add(self.episode_count, 1)
 
         for tvar in self.model.trainable_variables:
             tf.summary.histogram(tvar.op.name, tvar)

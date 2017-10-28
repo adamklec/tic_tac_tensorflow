@@ -21,33 +21,35 @@ def main():
 
     random_agent = RandomAgent(env)
 
-    log_dir = "./log/forward3"
+    log_dir = "./log/forward6"
 
     summary_op = tf.summary.merge_all()
+    summary_writer = tf.summary.FileWriter(log_dir)
+
     scaffold = tf.train.Scaffold(summary_op=summary_op)
     with tf.train.MonitoredTrainingSession(checkpoint_dir=log_dir,
                                            scaffold=scaffold) as sess:
         agent.sess = sess
         env.sess = sess
 
-        next_test_idx = 0
-
         while True:
-            step_count = sess.run(agent.global_step_count)
-            if step_count >= next_test_idx:
+            episode_count = sess.run(agent.episode_count)
+            if episode_count % 1000 == 0:
                 results = random_agent.test(agent)
 
                 sess.run(agent.update_random_agent_test_results,
                          feed_dict={random_agent_test_: result
                                     for random_agent_test_, result in zip(agent.random_agent_test_s, results)})
-                next_test_idx = next_test_idx + 10000
-                sess.run(agent.increment_global_step_count)
-                print(step_count, ':', results)
+                print(episode_count, ':', results)
+
                 if results[2] + results[5] == 0:
-                    sess.run(summary_op)
+                    final_summary = sess.run(summary_op)
+                    summary_writer.add_summary(final_summary, global_step=episode_count)
                     break
             else:
                 agent.train(.2)
+            sess.run(agent.increment_episode_count)
+
 
 if __name__ == "__main__":
     main()

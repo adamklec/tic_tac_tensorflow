@@ -21,8 +21,7 @@ class BackwardAgent(AgentBase):
         self.grads_s = [tf.placeholder(tf.float32, shape=tvar.get_shape()) for tvar in self.model.trainable_variables]
 
         self.apply_grads = self.opt.apply_gradients(zip(self.grads_s, self.model.trainable_variables),
-                                                    name='apply_grads',
-                                                    global_step=self.global_step_count)
+                                                    name='apply_grads')
 
     def train(self, epsilon):
 
@@ -40,11 +39,11 @@ class BackwardAgent(AgentBase):
         reward = self.env.get_reward()
 
         while reward is None:
-            move = self.get_move()
 
             if np.random.random() < epsilon:
                 self.env.make_random_move()
             else:
+                move = self.get_move()
                 self.env.make_move(move)
 
             reward = self.env.get_reward()
