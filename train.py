@@ -15,13 +15,13 @@ def main():
 
     # agent = SimpleAgent('agent_0', model, env)
     # agent = TDAgent('agent_0', model, env)
-    agent = ForwardAgent('agent_0', model, env)
+    # agent = ForwardAgent('agent_0', model, env)
     # agent = BackwardAgent('agent_0', model, env)
-    # agent = LeafAgent('agent_0', model, env)
+    agent = LeafAgent('agent_0', model, env)
 
     random_agent = RandomAgent(env)
 
-    log_dir = "./log/forward6"
+    log_dir = "./log/leaf"
 
     summary_op = tf.summary.merge_all()
     summary_writer = tf.summary.FileWriter(log_dir)
