@@ -1,7 +1,10 @@
 class HumanAgent(object):
-    def get_move(self, env):
+    def __init__(self, env):
+        self.env = env
+
+    def get_move(self):
         while True:
-            legal_moves = env.get_legal_moves()
+            legal_moves = self.env.get_legal_moves()
             move = input("Enter your move:")
             try:
                 move = int(move) - 1
