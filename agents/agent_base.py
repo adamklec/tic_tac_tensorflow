@@ -1,9 +1,8 @@
-from abc import ABCMeta
 import numpy as np
 import tensorflow as tf
 
 
-class AgentBase(metaclass=ABCMeta):
+class AgentBase:
 
     def __init__(self, name, model, env):
         self.name = name

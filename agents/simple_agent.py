@@ -10,7 +10,7 @@ class SimpleAgent(AgentBase):
                  env,
                  verbose=False):
 
-        super().__init__(name, model, env)
+        AgentBase.__init__(self, name, model, env)
 
         self.opt = tf.train.AdamOptimizer()
 

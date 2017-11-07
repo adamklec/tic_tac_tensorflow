@@ -1,6 +1,5 @@
 import random
 from collections import Counter
-from agents.agent_base import AgentBase
 
 
 class RandomAgent:
